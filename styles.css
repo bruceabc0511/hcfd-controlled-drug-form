@@ -582,7 +582,7 @@ body {
 .qty-unit-item {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   flex: 1 1 110px;
 }
 
