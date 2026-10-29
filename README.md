@@ -6,11 +6,11 @@
 
 ## 📁 檔案結構
 
-- [index.html](file:///d:/Anti/index.html)：主網頁介面（含事故人員填報區、四級主管電子意見區、傳簽進度追蹤與分享連結列）
-- [styles.css](file:///d:/Anti/styles.css)：`#FF5809` 主色調響應式樣式表（跨裝置多解析度 RWD）與 `@media print` A4 紙本原貌列印排版規則
-- [app.js](file:///d:/Anti/app.js)：表單互動連動、網址 `?id=單號` 雲端自動載入、四級主管進度偵測、民國年換算、照片壓縮預覽與 JSON 匯出入
-- [gas/Code.gs](file:///d:/Anti/gas/Code.gs)：Google Apps Script 雲端後端程式碼（負責儲存與更新同一單號之報告與各級主管意見，並將照片轉存至 Google Drive）
-- [RESPONSIVE_DESIGN_GUIDE.md](file:///d:/Anti/RESPONSIVE_DESIGN_GUIDE.md)：跨裝置多解析度 RWD 與 A4 列印防跑版設計規範手冊
+- [index.html](file:///D:/Antigravity/管制藥事故報告單/index.html)：主網頁介面（含事故人員填報區、四級主管電子意見區、傳簽進度追蹤與分享連結列）
+- [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css)：`#FF5809` 主色調響應式樣式表（跨裝置多解析度 RWD）與 `@media print` A4 紙本原貌列印排版規則
+- [app.js](file:///D:/Antigravity/管制藥事故報告單/app.js)：表單互動連動、網址 `?id=單號` 雲端自動載入、四級主管進度偵測、民國年換算、照片壓縮預覽與 JSON 匯出入
+- [gas/Code.gs](file:///D:/Antigravity/管制藥事故報告單/gas/Code.gs)：Google Apps Script 雲端後端程式碼（負責儲存與更新同一單號之報告與各級主管意見，並將照片轉存至 Google Drive）
+- [RESPONSIVE_DESIGN_GUIDE.md](file:///D:/Antigravity/管制藥事故報告單/RESPONSIVE_DESIGN_GUIDE.md)：跨裝置多解析度 RWD 與 A4 列印防跑版設計規範手冊
 
 ---
 

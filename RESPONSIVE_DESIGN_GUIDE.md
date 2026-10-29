@@ -21,32 +21,32 @@
 ### 案例 1：`@media (max-width: 768px)` 誤傷 A4 PDF 列印排版（最關鍵陷阱！）
 - **跑版原因**：A4 縱向紙張在瀏覽器列印引擎（96 DPI）中的可視寬度約為 **`718px`**（小於 `768px`）。若 CSS 只寫 `@media (max-width: 768px)`，在列印／匯出 PDF 時會誤觸手機版規則，導致整個表格變成單欄垂直長條！
 - **標準解法**：
-  1. 所有給螢幕用的響應式規則，一律加上 **`screen`** 關鍵字：`@media screen and (max-width: 768px)`（見 [styles.css](file:///d:/Anti/styles.css#L1182)）。
-  2. 在 `@media print` 中明確宣告 `display: table !important`、`display: table-row !important`、`display: table-cell !important`（見 [styles.css](file:///d:/Anti/styles.css#L1336-L1364)）。
+  1. 所有給螢幕用的響應式規則，一律加上 **`screen`** 關鍵字：`@media screen and (max-width: 768px)`（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L1182)）。
+  2. 在 `@media print` 中明確宣告 `display: table !important`、`display: table-row !important`、`display: table-cell !important`（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L1336-L1364)）。
 
 ### 案例 2：HTML 行內固定像素寬度（`style="width:150px"`）在手機溢出或參差不齊
 - **跑版原因**：「報案證明」中的受理單位、日期、文號原本寫死 `style="width:150px"` 等固定寬度，在 `320px~414px` 手機上會因為「文字標籤＋輸入框」寬度總和尷尬而產生參差不齊的斷行。
-- **標準解法**：移除 HTML 行內固定寬度，改用彈性容器 `.police-field-item { display: inline-flex; flex: 1 1 180px; }`（見 [index.html](file:///d:/Anti/index.html#L436-L450)、[styles.css](file:///d:/Anti/styles.css#L759-L768)），桌機自動均分、小螢幕自動 `100%` 滿版對齊。
+- **標準解法**：移除 HTML 行內固定寬度，改用彈性容器 `.police-field-item { display: inline-flex; flex: 1 1 180px; }`（見 [index.html](file:///D:/Antigravity/管制藥事故報告單/index.html#L436-L450)、[styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L759-L768)），桌機自動均分、小螢幕自動 `100%` 滿版對齊。
 
 ### 案例 3：絕對定位標籤（`position: absolute`）在小螢幕覆蓋正文
 - **跑版原因**：「分隊長主管意見」右上角的 `✍️ 紙本手寫欄位` 標籤原本使用 `position: absolute; top: 6px; right: 10px;`，在螢幕較窄時會直接疊在「`□能確定責任 □無法確定責任`」文字上方。
-- **標準解法**：改用彈性列 `.handwriting-badge-row` 或在小螢幕（`<= 480px`）自動轉為 `position: static; display: inline-block;`（見 [styles.css](file:///d:/Anti/styles.css#L805-L812)、[styles.css](file:///d:/Anti/styles.css#L1301-L1309)），徹底消除文字重疊。
+- **標準解法**：改用彈性列 `.handwriting-badge-row` 或在小螢幕（`<= 480px`）自動轉為 `position: static; display: inline-block;`（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L805-L812)、[styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L1301-L1309)），徹底消除文字重疊。
 
 ### 案例 4：簽章與日期欄 `min-width` + `gap` 總和超過小手機寬度
 - **跑版原因**：`.paper-sign-footer` 原本未設 `flex-wrap: wrap`，且 `min-width: 170px` 加上 `gap: 36px` 與日期欄總寬達 `370px`，在 `320px~360px` 手機上會產生水平捲軸。
-- **標準解法**：加上 `flex-wrap: wrap`，並在手機斷點調降 `min-width: 120px` 與 `gap: 6px 16px`（見 [styles.css](file:///d:/Anti/styles.css#L857-L865)、[styles.css](file:///d:/Anti/styles.css#L1273-L1281)）。
+- **標準解法**：加上 `flex-wrap: wrap`，並在手機斷點調降 `min-width: 120px` 與 `gap: 6px 16px`（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L857-L865)、[styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L1273-L1281)）。
 
 ### 案例 5：日期＋時間並排輸入框在窄螢幕擠壓
 - **跑版原因**：`<input type="date">` 與 `<input type="time">` 在 iOS / Android 瀏覽器具有原生最小內建寬度，若硬塞在同一行且未設 `flex-wrap: wrap` 會撐破容器。
-- **標準解法**：使用 `.datetime-group { display: flex; flex-wrap: wrap; gap: 6px; }` 搭配 `flex: 1 1 135px`（見 [styles.css](file:///d:/Anti/styles.css#L547-L560)），空間足夠時並排、窄螢幕時自動上下堆疊。
+- **標準解法**：使用 `.datetime-group { display: flex; flex-wrap: wrap; gap: 6px; }` 搭配 `flex: 1 1 135px`（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L547-L560)），空間足夠時並排、窄螢幕時自動上下堆疊。
 
 ### 案例 6：長文字 `<select>` 下拉選單撐破手機螢幕
 - **跑版原因**：「列印輸出模式」的 `<option>` 文字較長，若未限制 `max-width: 100%`，瀏覽器會依最長選項撐開 `<select>` 寬度。
-- **標準解法**：為外層與 `<select>` 加上 `max-width: 100%; text-overflow: ellipsis;`（見 [styles.css](file:///d:/Anti/styles.css#L266-L289)）。
+- **標準解法**：為外層與 `<select>` 加上 `max-width: 100%; text-overflow: ellipsis;`（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L266-L289)）。
 
 ### 案例 7：中型平板（`769px ~ 960px`）表格標題字距過大導致單字換行
 - **跑版原因**：為求美觀設定的 `letter-spacing: 6px` 在桌機很漂亮，但在 `800px` 平板上會讓窄欄標題提早換行。
-- **標準解法**：新增 `@media screen and (max-width: 960px)` 中繼斷點，自動收斂 `padding` 與 `letter-spacing`（見 [styles.css](file:///d:/Anti/styles.css#L1160-L1179)）。
+- **標準解法**：新增 `@media screen and (max-width: 960px)` 中繼斷點，自動收斂 `padding` 與 `letter-spacing`（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L1160-L1179)）。
 
 ---
 
