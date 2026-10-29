@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 新竹縣政府消防局 管制藥品損壞/遺失事故報告單 電子表單系統
  * 前端核心邏輯 (app.js) — 支援事故人員填報、四級主管電子傳簽、雲端同步與 A4 紙本列印蓋章
  */
@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   bindToolbarAndModals();
   initCloudUrlFromQueryOrDefault();
   updateCloudStatusUI();
+  initAdminConfigAccess();
 
   // 檢查網址是否帶有傳簽單號 (?id=HCFD-...)
   const hasSharedId = await checkAndLoadSharedReportFromUrl();
@@ -99,8 +100,7 @@ async function checkAndLoadSharedReportFromUrl() {
 
   const gasUrl = getActiveGasUrl();
   if (!gasUrl) {
-    showToast(`⚠️ 偵測到傳簽單號 ${reportId}，請先於右上角「雲端設定」貼上 Google Apps Script 網址`);
-    openModal('cloudConfigModal');
+    showToast(`⚠️ 偵測到傳簽單號 ${reportId}，但未設定雲端後端網址，請聯繫管理員`);
     return false;
   }
 
@@ -1099,8 +1099,7 @@ async function handleFormSubmitAndCopyLink() {
 
   const gasUrl = getActiveGasUrl();
   if (!gasUrl) {
-    openModal('cloudConfigModal');
-    showToast('⚠️ 請先完成「Google 雲端設定」，即可產生跨裝置主管傳簽連結！');
+    showToast('⚠️ 尚未設定 Google 雲端傳簽網址，請聯繫系統管理員！');
     return;
   }
 
@@ -1473,7 +1472,7 @@ function updateCloudStatusUI() {
     text.textContent = 'Google 雲端傳簽已連線';
   } else {
     dot.classList.add('offline');
-    text.textContent = '待設定雲端傳簽（點選右上角「雲端設定」）';
+    text.textContent = '雲端傳簽服務未連線';
   }
 }
 
@@ -1502,4 +1501,41 @@ function escapeHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * 隱藏管理員雲端設定入口：避免於傳簽時被其他人員誤觸改到設定
+ * 管理員解鎖方式：
+ * 1. 網址帶有 ?admin=1 或 ?config=1（會自動於右上角顯現「☁️ 雲端設定」按鈕）
+ * 2. 或連續點擊左上角「藥」字 Logo 5 次，即可解鎖並直接開啟設定視窗
+ */
+function initAdminConfigAccess() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const btn = document.getElementById('btnOpenCloudConfig');
+
+  // 方式 1：網址帶有 ?admin=1 或 ?config=1
+  if (urlParams.get('admin') === '1' || urlParams.get('config') === '1') {
+    if (btn) btn.style.display = 'inline-flex';
+  }
+
+  // 方式 2：連續點擊左上角「藥」Logo 5 次解鎖
+  const brandIcon = document.querySelector('.brand-icon');
+  if (brandIcon) {
+    let clickCount = 0;
+    let clickTimer = null;
+    brandIcon.style.cursor = 'pointer';
+    brandIcon.title = '新竹縣政府消防局管制藥品系統';
+    brandIcon.addEventListener('click', () => {
+      clickCount++;
+      clearTimeout(clickTimer);
+      clickTimer = setTimeout(() => { clickCount = 0; }, 1500);
+      if (clickCount >= 5) {
+        clickCount = 0;
+        if (btn) btn.style.display = 'inline-flex';
+        document.getElementById('gasWebAppUrl').value = getActiveGasUrl();
+        openModal('cloudConfigModal');
+        showToast('🔓 已解鎖管理員「Google 雲端傳簽設定」視窗！');
+      }
+    });
+  }
 }
