@@ -3,8 +3,8 @@
  * 前端核心邏輯 (app.js) — 支援事故人員填報、四級主管電子傳簽、雲端同步與 A4 紙本列印蓋章
  */
 
-// 若您已完成部署 Google Apps Script，可將網址填入 DEFAULT_GAS_URL，全體同仁與主管打開網頁即自動連線
-const DEFAULT_GAS_URL = '';
+// 預設 Google Apps Script 雲端傳簽後端網址（全體同仁與主管打開網頁即自動連線）
+const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbzV2Ypsl_iC-zyFd9pkL10jBSyGmL8J5FpAvknEACRWaVA7SKELxFjXtocxj7IRNmMX/exec';
 
 const STORAGE_KEYS = {
   DRAFT: 'hcfd_controlled_drug_draft_v1',
