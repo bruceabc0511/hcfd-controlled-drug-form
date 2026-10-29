@@ -225,6 +225,7 @@
                   <input type="text" id="drugNameZh" name="drugNameZh" class="input-text" list="commonDrugsZh" placeholder="例如：吩坦尼注射液 / 咪達唑侖" required />
                   <datalist id="commonDrugsZh">
                     <option value="吩坦尼注射液" data-en="Fentanyl Injection" data-level="二級" data-spec="0.05mg/ml, 2ml/Amp" data-unit="支(Amp)"></option>
+                    <option value="納布芬注射液(芯奔)" data-en="Nalbuphine (Bain Injection)" data-level="非管制藥" data-spec="10mg/ml, 1ml/Amp" data-unit="支(Amp)"></option>
                     <option value="咪達唑侖注射液 (導美睡)" data-en="Midazolam Injection (Dormicum)" data-level="四級" data-spec="5mg/ml, 3ml/Amp" data-unit="支(Amp)"></option>
                     <option value="氯硝西泮 (克癇平)" data-en="Clonazepam" data-level="四級" data-spec="2mg/Tab" data-unit="顆"></option>
                     <option value="地西泮注射液 (煩寧)" data-en="Diazepam Injection" data-level="四級" data-spec="10mg/2ml/Amp" data-unit="支(Amp)"></option>
@@ -270,6 +271,7 @@
                   <input type="text" id="drugNameEn" name="drugNameEn" class="input-text" list="commonDrugsEn" placeholder="例如：Midazolam / Fentanyl" />
                   <datalist id="commonDrugsEn">
                     <option value="Fentanyl Injection"></option>
+                    <option value="Nalbuphine (Bain Injection)"></option>
                     <option value="Midazolam Injection (Dormicum)"></option>
                     <option value="Clonazepam"></option>
                     <option value="Diazepam Injection"></option>
@@ -290,8 +292,7 @@
                     <span>單位：</span>
                     <input type="text" id="drugUnit" name="drugUnit" class="input-text" list="unitList" placeholder="支 / Amp" required />
                     <datalist id="unitList">
-                      <option value="支"></option>
-                      <option value="安瓿(Amp)"></option>
+                      <option value="支(Amp)"></option>
                       <option value="瓶(Vial)"></option>
                       <option value="顆"></option>
                       <option value="盒"></option>
@@ -515,7 +516,7 @@
                 醫療指導<br class="desktop-br" />醫師意見
               </th>
               <td colspan="5" class="handwriting-cell">
-                <span class="handwriting-badge">✍️ 紙本手寫欄位</span>
+                <span class="handwriting-badge">✍️ 紙本手寫欄位(列印後親筆填寫)</span>
                 <div class="paper-opinion-space">
                   意見：
                 </div>
@@ -532,7 +533,7 @@
                 緊急救護科<br class="desktop-br" />主管意見
               </th>
               <td colspan="5" class="handwriting-cell">
-                <span class="handwriting-badge">✍️ 紙本手寫欄位</span>
+                <span class="handwriting-badge">✍️ 紙本手寫欄位(列印後親筆填寫)</span>
                 <div class="paper-opinion-space">
                   意見：
                 </div>
@@ -549,7 +550,7 @@
                 醫院<br class="desktop-br" />藥劑科主任<br class="desktop-br" />意見
               </th>
               <td colspan="5" class="handwriting-cell">
-                <span class="handwriting-badge">✍️ 紙本手寫欄位</span>
+                <span class="handwriting-badge">✍️ 紙本手寫欄位(列印後親筆填寫)</span>
                 <div class="paper-opinion-space compact">
                   處理方式：
                 </div>
