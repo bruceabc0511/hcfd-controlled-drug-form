@@ -29,6 +29,7 @@
   --border-dark: #1F1F1F;
   --border-ui: #DCD7D4;
   --border-input: #CCCCCC;
+  --table-border-width: 1.5pt;
 
   --success: #16A34A;
   --warning: #D97706;
@@ -453,13 +454,13 @@ body {
 .form-table {
   width: 100%;
   border-collapse: collapse;
-  border: 2px solid var(--border-dark);
+  border: var(--table-border-width, 1.5pt) solid var(--border-dark);
   table-layout: fixed;
 }
 
 .form-table th,
 .form-table td {
-  border: 1px solid var(--border-dark);
+  border: var(--table-border-width, 1.5pt) solid var(--border-dark);
   padding: 7px 10px;
   vertical-align: middle;
   font-size: 14.5px;
@@ -1045,7 +1046,7 @@ body {
 }
 
 .attach-col:first-child {
-  border-right: 1px solid var(--border-dark);
+  border-right: var(--table-border-width, 1.5pt) solid var(--border-dark);
 }
 
 .attach-col-title {
@@ -1537,7 +1538,7 @@ body {
     display: table !important;
     width: 100% !important;
     border-collapse: collapse !important;
-    border: 1.4pt solid #000000 !important;
+    border: 1.5pt solid #000000 !important;
     table-layout: fixed !important;
   }
 
@@ -1554,7 +1555,7 @@ body {
   .form-table th,
   .form-table td {
     display: table-cell !important;
-    border: 0.75pt solid #000000 !important;
+    border: 1.5pt solid #000000 !important;
     padding: 3px 6px !important;
     font-size: 9.8pt !important;
     line-height: 1.25 !important;
@@ -1570,7 +1571,8 @@ body {
   }
 
   .form-table th.section-banner {
-    border-left: 0.75pt solid #000000 !important;
+    border: 1.5pt solid #000000 !important;
+    border-left: 1.5pt solid #000000 !important;
     font-size: 10pt !important;
     padding: 3px 6px !important;
   }
@@ -1638,7 +1640,7 @@ body {
   }
 
   .photo-slot:first-child {
-    border-right: 1pt dashed #000000 !important;
+    border-right: 1.5pt dashed #000000 !important;
     border-bottom: none !important;
   }
 
@@ -1701,7 +1703,7 @@ body {
   }
 
   .attach-col:first-child {
-    border-right: 0.75pt solid #000000 !important;
+    border-right: 1.5pt solid #000000 !important;
   }
 
   .attach-col-title {

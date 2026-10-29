@@ -16,13 +16,13 @@
 
 ---
 
-## 二、本次網頁排版全面檢測與修復紀錄（7 大實戰案例）
+## 二、本次網頁排版全面檢測與修復紀錄（8 大實戰案例）
 
 ### 案例 1：`@media (max-width: 768px)` 誤傷 A4 PDF 列印排版（最關鍵陷阱！）
 - **跑版原因**：A4 縱向紙張在瀏覽器列印引擎（96 DPI）中的可視寬度約為 **`718px`**（小於 `768px`）。若 CSS 只寫 `@media (max-width: 768px)`，在列印／匯出 PDF 時會誤觸手機版規則，導致整個表格變成單欄垂直長條！
 - **標準解法**：
-  1. 所有給螢幕用的響應式規則，一律加上 **`screen`** 關鍵字：`@media screen and (max-width: 768px)`（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L1182)）。
-  2. 在 `@media print` 中明確宣告 `display: table !important`、`display: table-row !important`、`display: table-cell !important`（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L1336-L1364)）。
+  1. 所有給螢幕用的響應式規則，一律加上 **`screen`** 關鍵字：`@media screen and (max-width: 768px)`（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L1331)）。
+  2. 在 `@media print` 中明確宣告 `display: table !important`、`display: table-row !important`、`display: table-cell !important`（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L1537-L1577)）。
 
 ### 案例 2：HTML 行內固定像素寬度（`style="width:150px"`）在手機溢出或參差不齊
 - **跑版原因**：「報案證明」中的受理單位、日期、文號原本寫死 `style="width:150px"` 等固定寬度，在 `320px~414px` 手機上會因為「文字標籤＋輸入框」寬度總和尷尬而產生參差不齊的斷行。
@@ -46,7 +46,18 @@
 
 ### 案例 7：中型平板（`769px ~ 960px`）表格標題字距過大導致單字換行
 - **跑版原因**：為求美觀設定的 `letter-spacing: 6px` 在桌機很漂亮，但在 `800px` 平板上會讓窄欄標題提早換行。
-- **標準解法**：新增 `@media screen and (max-width: 960px)` 中繼斷點，自動收斂 `padding` 與 `letter-spacing`（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L1160-L1179)）。
+- **標準解法**：新增 `@media screen and (max-width: 960px)` 中繼斷點，自動收斂 `padding` 與 `letter-spacing`（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L1307-L1327)）。
+
+### 案例 8：A4 PDF 匯出時表格外框與內部格線粗細不一（統一預設 1.5pt）
+- **跑版原因**：表格外框原本設定 `1.4pt`，內部單元格（`th`, `td`）及檢附文件分欄線則為 `0.75pt`。在列印預覽或匯出為 A4 PDF 於螢幕檢視與高解析列印時，因解析度縮放與像素渲染差異，導致內部格線偏細或若隱若現，產生視覺上「格線粗細不一、外框重內部輕」的落差。
+- **標準解法**：
+  1. 將外框與所有內部單元格統一預設為 **`1.5pt solid #000000`**：
+     - 表格本體：`.form-table { border: 1.5pt solid #000000 !important; }`
+     - 單元格：`.form-table th, .form-table td { border: 1.5pt solid #000000 !important; }`
+     - 主管意見區標題橫幅：`.form-table th.section-banner { border: 1.5pt solid #000000 !important; }`
+     - 查檢表子欄分割線：`.attach-col:first-child { border-right: 1.5pt solid #000000 !important; }`
+     - 雙照片中隔虛線：`.photo-slot:first-child { border-right: 1.5pt dashed #000000 !important; }`（維持 1.5pt 筆觸粗度）
+  2. 桌面與螢幕檢視同步導入 `--table-border-width: 1.5pt`，維持全平台介面與紙本輸出的筆觸一致性（見 [styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L32)、[styles.css](file:///D:/Antigravity/管制藥事故報告單/styles.css#L1537-L1577)）。
 
 ---
 
