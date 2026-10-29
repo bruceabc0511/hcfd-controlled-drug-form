@@ -52,12 +52,12 @@
     <!-- 填表提示與列印聯數選擇 (列印時隱藏) -->
     <div class="info-banner no-print">
       <div class="info-banner-text">
-        💡 <strong>填表提示：</strong>「減損（發生）日期」為唯一基準，使用紀錄單、簿冊、盤點表及報案證明單日期須一致。四級主管意見欄為<strong>紙本手寫區</strong>，列印後由各級長官親筆簽核。
+        💡 <strong>填表提示：</strong>「減損(發生)日期」為唯一基準，使用紀錄單、簿冊、盤點表及報案證明單日期須一致。主管意見欄為<strong>紙本手寫區</strong>，列印後由各級長官親筆簽核。
       </div>
       <div class="print-mode-selector">
         <span>🖨️ 列印輸出模式：</span>
         <select id="printCopyMode">
-          <option value="triplicate">一式三聯（自動產生三頁：藥劑科 / 救護科 / 分隊留存）</option>
+          <option value="triplicate">一式三聯（自動產生三頁：醫院藥劑科 / 救護科 / 分隊留存）</option>
           <option value="single">單頁列印（僅列印乙份 A4）</option>
         </select>
       </div>
@@ -89,8 +89,8 @@
           </div>
 
           <div class="doc-triplicate-line">
-            <span class="triplicate-badge-print" id="currentCopyBadge">第一聯：仁慈醫院藥劑科留存</span>
-            <span>一式三聯：第一聯 仁慈醫院藥劑科留存 第二聯 消防局緊急救護科留存 第三聯 分隊留存</span>
+            <span class="triplicate-badge-print" id="currentCopyBadge">第一聯：醫院藥劑科留存</span>
+            <span>一式三聯：第一聯 醫院藥劑科留存 第二聯 消防局緊急救護科留存 第三聯 分隊自存</span>
           </div>
         </div>
 
@@ -114,24 +114,26 @@
                   <input type="text" id="unit" name="unit" class="input-text" list="squadList" placeholder="例如：竹北分隊" required />
                   <datalist id="squadList">
                     <option value="竹北分隊"></option>
-                    <option value="高鐵分隊"></option>
                     <option value="光明分隊"></option>
+                    <option value="高鐵分隊"></option>
+                    <option value="豐田分隊"></option>
+                    <option value="山崎分隊"></option>
+                    <option value="新豐分隊"></option>
                     <option value="竹東分隊"></option>
-                    <option value="二重分隊"></option>
+                    <option value="橫山分隊"></option>
+                    <option value="尖石分隊"></option>
+                    <option value="田埔分隊"></option>
+                    <option value="五峰分隊"></option>
+                    <option value="花園小隊"></option>
                     <option value="新埔分隊"></option>
                     <option value="關西分隊"></option>
                     <option value="新工分隊"></option>
                     <option value="湖口分隊"></option>
-                    <option value="山崎分隊"></option>
-                    <option value="新豐分隊"></option>
-                    <option value="豐田分隊"></option>
-                    <option value="芎林分隊"></option>
-                    <option value="橫山分隊"></option>
-                    <option value="北埔分隊"></option>
-                    <option value="峨眉分隊"></option>
+                    <option value="芎林分隊"></option>                    
+                    <option value="二重分隊"></option>
                     <option value="寶山分隊"></option>
-                    <option value="尖石分隊"></option>
-                    <option value="五峰分隊"></option>
+                    <option value="北埔分隊"></option>
+                    <option value="峨眉分隊"></option>                                        
                   </datalist>
                 </div>
                 <span class="print-only-text" id="print_unit">○○分隊</span>
@@ -424,7 +426,7 @@
                   <strong>遺失／失竊報案證明：</strong>
                   <label class="check-label">
                     <input type="checkbox" name="policeStatus" id="policeNA" value="不適用" />
-                    <span>不適用（損壞）</span>
+                    <span>不適用(損壞)</span>
                   </label>
                   <label class="check-label">
                     <input type="checkbox" name="policeStatus" id="policeReported" value="已報案" />
@@ -447,7 +449,7 @@
                   </div>
                 </div>
                 <span class="print-only-text" id="print_policeReport">
-                  遺失／失竊報案證明：□不適用（損壞）　□已報案：受理單位　　　　　　日期　　年　月　日　文號
+                  遺失／失竊報案證明：□不適用(損壞)　□已報案：受理單位　　　　　　日期　　年　月　日　文號
                 </span>
               </td>
             </tr>
@@ -487,7 +489,7 @@
               </th>
               <td colspan="5" class="handwriting-cell">
                 <div class="handwriting-badge-row no-print">
-                  <span class="handwriting-badge">✍️ 紙本手寫欄位（列印後親筆填寫）</span>
+                  <span class="handwriting-badge">✍️ 紙本手寫欄位(列印後親筆填寫)</span>
                 </div>
                 <div class="paper-box-line">
                   <span>
@@ -544,7 +546,7 @@
             <!-- 14. 仁慈醫院 藥劑科主任 意見 -->
             <tr class="handwriting-row">
               <th class="field-label">
-                仁慈醫院<br class="desktop-br" />藥劑科主任<br class="desktop-br" />意見
+                醫院<br class="desktop-br" />藥劑科主任<br class="desktop-br" />意見
               </th>
               <td colspan="5" class="handwriting-cell">
                 <span class="handwriting-badge">✍️ 紙本手寫欄位</span>
@@ -618,7 +620,7 @@
 
                   <!-- 右欄：【仁慈醫院藥劑科辦理】 -->
                   <div class="attach-col">
-                    <div class="attach-col-title">【仁慈醫院藥劑科辦理】</div>
+                    <div class="attach-col-title">【醫院藥劑科辦理】</div>
                     <div>
                       <div class="attach-item">
                         <span class="paper-square"></span>
@@ -648,7 +650,7 @@
         <!-- 表單底部時效與說明 -->
         <div class="doc-footer-notes">
           <div class="footer-deadline">
-            時效：事件發生當下即同步通報分隊長及仁慈醫院藥劑科（藥劑科立即報請衛生局查核）；分隊（含分隊長意見）24 小時內送出本單；藥劑科須於減損日起 7 日內向食藥署申報。
+            時效：事件發生當下即同步通報分隊長及醫院藥劑科（藥劑科立即報請衛生局查核）；分隊（含分隊長意見）24 小時內送出本單；藥劑科須於減損日起 7 日內向食藥署申報。
           </div>
           <div class="footer-explanation">
             說明：「減損（發生）日期」為唯一基準，使用紀錄單、簿冊、盤點表及報案證明單日期須一致。損壞須保留殘品並拍照；遺失、失竊應保留現場並立即向當地警察機關報案。無救護案件編號者請勾選並於報告內容說明。
