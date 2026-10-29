@@ -1,0 +1,448 @@
+/**
+ * ============================================================================
+ * 新竹縣政府消防局 管制藥品損壞/遺失事故報告單 — Google Apps Script 雲端傳簽後端 (Code.gs)
+ * ============================================================================
+ * 支援流程：
+ * 1. 事故人員填寫表單與上傳照片 -> 儲存至雲端並產生專屬傳簽連結 (?id=單號)
+ * 2. 四級主管（分隊長、醫療指導醫師、緊急救護科、藥劑科主任）開啟同一連結 ->
+ *    自動載入單據與照片 -> 填寫主管意見與日期 -> 更新雲端同一筆單據
+ * 3. 全部主管填寫完畢後 -> 事故人員開啟同一連結檢視完整內容 -> 列印 A4 紙本由各級主管蓋章
+ */
+
+const SHEET_NAME = '管制藥品事故報告單紀錄';
+const DRIVE_ROOT_FOLDER_NAME = '新竹縣消防局_管制藥品事故照片';
+
+/**
+ * 處理 GET 請求：
+ * - ?action=ping          : 測試雲端連線
+ * - ?action=getReport&id= : 依流水編號讀取單筆完整報告單（含從 Drive 還原照片供預覽與列印）
+ * - ?action=listReports   : 讀取最近 50 筆報告單清單
+ */
+function doGet(e) {
+  const action = (e && e.parameter && e.parameter.action) || 'ping';
+
+  try {
+    if (action === 'ping') {
+      ensureSheetInitialized_();
+      return jsonResponse_({
+        status: 'success',
+        message: '新竹縣政府消防局管制藥品事故報告單 雲端傳簽後端連線正常！'
+      });
+    }
+
+    if (action === 'getReport') {
+      const id = (e && e.parameter && e.parameter.id) || '';
+      if (!id) {
+        return jsonResponse_({ status: 'error', message: '缺少單號參數 (id)' });
+      }
+      const record = getReportById_(id);
+      if (!record) {
+        return jsonResponse_({ status: 'error', message: '找不到單號：' + id });
+      }
+      return jsonResponse_({
+        status: 'success',
+        record: record
+      });
+    }
+
+    if (action === 'listReports') {
+      const records = getRecentRecords_(50);
+      return jsonResponse_({
+        status: 'success',
+        records: records
+      });
+    }
+
+    return jsonResponse_({ status: 'success', message: 'GAS Web App Active' });
+  } catch (err) {
+    return jsonResponse_({ status: 'error', message: err.toString() });
+  }
+}
+
+/**
+ * 處理 POST 請求：
+ * - 新增或更新（Upsert）同一單號之事故報告單與四級主管簽核意見
+ */
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+
+  try {
+    const rawBody = e.postData && e.postData.contents ? e.postData.contents : '{}';
+    const requestObj = JSON.parse(rawBody);
+    const incoming = requestObj.payload || requestObj;
+
+    const sheet = ensureSheetInitialized_();
+    const serialNumber = incoming.serialNumber || generateServerSerial_(sheet);
+    incoming.serialNumber = serialNumber;
+
+    // 檢查試算表中是否已存在相同單號（若存在則為「主管簽核更新」或「修改重送」）
+    const existingRowInfo = findRowBySerial_(sheet, serialNumber);
+    const existingData = existingRowInfo ? existingRowInfo.data : {};
+
+    // 合併既有資料與新送出資料
+    const merged = Object.assign({}, existingData, incoming);
+
+    // 處理照片上傳至 Google Drive
+    let photo1Url = existingData.photo1DriveUrl || '';
+    let photo2Url = existingData.photo2DriveUrl || '';
+    let photo1FileId = existingData.photo1FileId || '';
+    let photo2FileId = existingData.photo2FileId || '';
+    let folderUrl = existingData.driveFolderUrl || '';
+
+    const hasNewPhoto1 = incoming.photo1 && incoming.photo1.indexOf('data:image') === 0;
+    const hasNewPhoto2 = incoming.photo2 && incoming.photo2.indexOf('data:image') === 0;
+
+    if (hasNewPhoto1 || hasNewPhoto2) {
+      const folder = getOrCreateCaseFolder_(serialNumber, merged.unit || '未填分隊');
+      folderUrl = folder.getUrl();
+
+      if (hasNewPhoto1) {
+        const saved1 = saveBase64ImageToFolder_(folder, incoming.photo1, `${serialNumber}_照片一.jpg`);
+        photo1Url = saved1.url;
+        photo1FileId = saved1.id;
+      }
+      if (hasNewPhoto2) {
+        const saved2 = saveBase64ImageToFolder_(folder, incoming.photo2, `${serialNumber}_照片二.jpg`);
+        photo2Url = saved2.url;
+        photo2FileId = saved2.id;
+      }
+    }
+
+    // 若前端清除照片
+    if (incoming.photo1 === '') {
+      photo1Url = '';
+      photo1FileId = '';
+    }
+    if (incoming.photo2 === '') {
+      photo2Url = '';
+      photo2FileId = '';
+    }
+
+    merged.photo1DriveUrl = photo1Url;
+    merged.photo2DriveUrl = photo2Url;
+    merged.photo1FileId = photo1FileId;
+    merged.photo2FileId = photo2FileId;
+    merged.driveFolderUrl = folderUrl;
+    merged.updatedAt = new Date().toISOString();
+
+    // 存入結構欄位的 JSON 不塞入龐大 Base64，改以 Drive File ID 供讀取時動態還原
+    const jsonToStore = Object.assign({}, merged, {
+      photo1: '',
+      photo2: ''
+    });
+
+    // 計算目前簽核進度摘要
+    const signProgress = computeApprovalStatusText_(merged);
+
+    const rowValues = [
+      serialNumber,
+      new Date(),
+      signProgress,
+      (merged.incidentTypes || []).join('、'),
+      merged.unit || '',
+      merged.reportDate || '',
+      merged.noCaseNumber ? '無案件編號' : (merged.caseNumber || ''),
+      merged.emsRecordNumber || '',
+      `${merged.occurDate || ''} ${merged.occurTime || ''}`.trim(),
+      (merged.occurPlaces || []).join('、') + (merged.occurPlaceOtherText ? ` (${merged.occurPlaceOtherText})` : ''),
+      merged.drugNameZh || '',
+      merged.drugNameEn || '',
+      (merged.controlLevels || []).join('、'),
+      merged.drugQty || '',
+      merged.drugUnit || '',
+      merged.drugSpec || '',
+      merged.batchNumber || '',
+      merged.expiryDate || '',
+      merged.custodian || '',
+      merged.reporter || '',
+      merged.contactPhone || '',
+      merged.reportContent || '',
+      photo1Url,
+      photo2Url,
+      folderUrl,
+      (merged.policeStatuses || []).join('、'),
+      merged.policeUnit || '',
+      merged.policeDate || '',
+      merged.policeDocNo || '',
+      [merged.improve1, merged.improve2, merged.improve3].filter(Boolean).join('\n'),
+      formatChiefSummary_(merged),
+      formatSingleOpinion_(merged.doctorOpinion, merged.doctorDate),
+      formatSingleOpinion_(merged.emsOpinion, merged.emsDate),
+      formatPharmacySummary_(merged),
+      JSON.stringify(jsonToStore)
+    ];
+
+    if (existingRowInfo) {
+      sheet.getRange(existingRowInfo.rowNumber, 1, 1, rowValues.length).setValues([rowValues]);
+    } else {
+      sheet.appendRow(rowValues);
+    }
+
+    return jsonResponse_({
+      status: 'success',
+      serialNumber: serialNumber,
+      signProgress: signProgress,
+      folderUrl: folderUrl,
+      isUpdate: Boolean(existingRowInfo),
+      message: existingRowInfo
+        ? '已成功更新單據與主管意見！'
+        : '已成功建立雲端傳簽單據！'
+    });
+  } catch (err) {
+    return jsonResponse_({
+      status: 'error',
+      message: err.toString()
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function computeApprovalStatusText_(d) {
+  const done = [];
+  if (d.chiefOpinion || d.chiefDate || (d.chiefDutyTypes && d.chiefDutyTypes.length) || (d.chiefDutyCerts && d.chiefDutyCerts.length)) {
+    done.push('分隊長');
+  }
+  if (d.doctorOpinion || d.doctorDate) {
+    done.push('指導醫師');
+  }
+  if (d.emsOpinion || d.emsDate) {
+    done.push('救護科');
+  }
+  if (d.pharmacyAction || d.pharmacyAdvice || d.pharmacyDate) {
+    done.push('藥劑科');
+  }
+  if (done.length === 0) return '待各級主管填寫意見 (0/4)';
+  if (done.length === 4) return '✅ 四級主管均已填寫完畢 (4/4 可列印蓋章)';
+  return `傳簽中 (${done.length}/4 已填：${done.join('、')})`;
+}
+
+function formatChiefSummary_(d) {
+  const parts = [];
+  const duty = (d.chiefDutyTypes || []).join('、') + (d.chiefDutyOther ? `(${d.chiefDutyOther})` : '');
+  const cert = (d.chiefDutyCerts || []).join('、');
+  if (duty || cert) parts.push(`判定：${[duty, cert].filter(Boolean).join(' / ')}`);
+  if (d.chiefOpinion) parts.push(`意見：${d.chiefOpinion}`);
+  if (d.chiefDate) parts.push(`日期：${d.chiefDate}`);
+  return parts.join('\n');
+}
+
+function formatSingleOpinion_(opinion, dateStr) {
+  const parts = [];
+  if (opinion) parts.push(`意見：${opinion}`);
+  if (dateStr) parts.push(`日期：${dateStr}`);
+  return parts.join('\n');
+}
+
+function formatPharmacySummary_(d) {
+  const parts = [];
+  if (d.pharmacyAction) parts.push(`處理方式：${d.pharmacyAction}`);
+  if (d.pharmacyAdvice) parts.push(`其他建議：${d.pharmacyAdvice}`);
+  if (d.pharmacyDate) parts.push(`日期：${d.pharmacyDate}`);
+  return parts.join('\n');
+}
+
+/**
+ * 確保工作表存在且包含標題列
+ */
+function ensureSheetInitialized_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_NAME);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME);
+    const headers = [
+      '流水編號',
+      '最後更新時間',
+      '傳簽進度狀態',
+      '事故類別',
+      '單位',
+      '填表日期',
+      '案件編號',
+      '救護紀錄表號',
+      '發生時間',
+      '發生地點',
+      '藥品中文名稱',
+      '藥品英文名稱',
+      '管制級別',
+      '數量',
+      '單位',
+      '規格',
+      '批號',
+      '效期',
+      '保管人',
+      '報告者',
+      '聯絡電話',
+      '報告內容',
+      '照片一連結 (Drive)',
+      '照片二連結 (Drive)',
+      '案件照片資料夾連結',
+      '報案證明狀態',
+      '報案受理單位',
+      '報案日期',
+      '報案文號',
+      '改善方案 (1~3)',
+      '分隊長主管意見',
+      '醫療指導醫師意見',
+      '緊急救護科主管意見',
+      '仁慈醫院藥劑科主任意見',
+      '完整結構資料(JSON)'
+    ];
+    sheet.appendRow(headers);
+
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setBackground('#FF5809');
+    headerRange.setFontColor('#FFFFFF');
+    headerRange.setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+
+  return sheet;
+}
+
+/**
+ * 依流水編號尋找既有列
+ */
+function findRowBySerial_(sheet, serialNumber) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return null;
+
+  const numRows = lastRow - 1;
+  const colCount = sheet.getLastColumn();
+  const values = sheet.getRange(2, 1, numRows, colCount).getValues();
+
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (String(values[i][0]).trim() === String(serialNumber).trim()) {
+      const jsonCol = values[i][colCount - 1];
+      let parsed = {};
+      if (jsonCol) {
+        try {
+          parsed = JSON.parse(jsonCol);
+        } catch (e) {
+          parsed = {};
+        }
+      }
+      return {
+        rowNumber: i + 2,
+        data: parsed
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * 依單號讀取單筆報告單，並將 Drive 中的照片轉回 Base64 DataURL 供前端跨裝置顯示與列印
+ */
+function getReportById_(serialNumber) {
+  const sheet = ensureSheetInitialized_();
+  const found = findRowBySerial_(sheet, serialNumber);
+  if (!found) return null;
+
+  const record = found.data;
+  if (record.photo1FileId) {
+    record.photo1 = loadDriveFileAsDataUrl_(record.photo1FileId);
+  }
+  if (record.photo2FileId) {
+    record.photo2 = loadDriveFileAsDataUrl_(record.photo2FileId);
+  }
+  return record;
+}
+
+function loadDriveFileAsDataUrl_(fileId) {
+  try {
+    const file = DriveApp.getFileById(fileId);
+    const blob = file.getBlob();
+    const contentType = blob.getContentType() || 'image/jpeg';
+    const base64 = Utilities.base64Encode(blob.getBytes());
+    return `data:${contentType};base64,${base64}`;
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * 讀取最近 N 筆紀錄供前端歷史列表顯示
+ */
+function getRecentRecords_(limit) {
+  const sheet = ensureSheetInitialized_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  const colCount = sheet.getLastColumn();
+  const startRow = Math.max(2, lastRow - limit + 1);
+  const numRows = lastRow - startRow + 1;
+  const dataRange = sheet.getRange(startRow, 1, numRows, colCount).getValues();
+
+  const records = [];
+  for (let i = dataRange.length - 1; i >= 0; i--) {
+    const row = dataRange[i];
+    const jsonCol = row[colCount - 1];
+    if (jsonCol) {
+      try {
+        const parsed = JSON.parse(jsonCol);
+        parsed.signProgress = row[2] || computeApprovalStatusText_(parsed);
+        records.push(parsed);
+        continue;
+      } catch (e) {
+        // fallback below
+      }
+    }
+    records.push({
+      serialNumber: row[0],
+      signProgress: row[2] || '',
+      incidentTypes: row[3] ? String(row[3]).split('、') : [],
+      unit: row[4],
+      reportDate: row[5],
+      drugNameZh: row[10],
+      drugQty: row[13],
+      drugUnit: row[14],
+      reporter: row[19]
+    });
+  }
+  return records;
+}
+
+/**
+ * 產生伺服器端民國年流水號
+ */
+function generateServerSerial_(sheet) {
+  const now = new Date();
+  const rocYear = now.getFullYear() - 1911;
+  const m = ('0' + (now.getMonth() + 1)).slice(-2);
+  const d = ('0' + now.getDate()).slice(-2);
+  const seq = ('00' + sheet.getLastRow()).slice(-3);
+  return `HCFD-${rocYear}${m}${d}-${seq}`;
+}
+
+function getOrCreateCaseFolder_(serialNumber, unitName) {
+  const rootIter = DriveApp.getFoldersByName(DRIVE_ROOT_FOLDER_NAME);
+  const rootFolder = rootIter.hasNext()
+    ? rootIter.next()
+    : DriveApp.createFolder(DRIVE_ROOT_FOLDER_NAME);
+
+  const subFolderName = `${serialNumber}_${unitName}`;
+  const subIter = rootFolder.getFoldersByName(subFolderName);
+  return subIter.hasNext()
+    ? subIter.next()
+    : rootFolder.createFolder(subFolderName);
+}
+
+function saveBase64ImageToFolder_(folder, dataUrl, fileName) {
+  const parts = dataUrl.split(',');
+  const mimeMatch = parts[0].match(/:(.*?);/);
+  const contentType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  const byteCharacters = Utilities.base64Decode(parts[1]);
+  const blob = Utilities.newBlob(byteCharacters, contentType, fileName);
+  const file = folder.createFile(blob);
+  return {
+    id: file.getId(),
+    url: file.getUrl()
+  };
+}
+
+function jsonResponse_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}

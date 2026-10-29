@@ -1,21 +1,23 @@
 /**
  * 新竹縣政府消防局 管制藥品損壞/遺失事故報告單 電子表單系統
- * 前端核心邏輯 (app.js)
+ * 前端核心邏輯 (app.js) — 支援事故人員填報、四級主管電子傳簽、雲端同步與 A4 紙本列印蓋章
  */
+
+// 若您已完成部署 Google Apps Script，可將網址填入 DEFAULT_GAS_URL，全體同仁與主管打開網頁即自動連線
+const DEFAULT_GAS_URL = '';
 
 const STORAGE_KEYS = {
   DRAFT: 'hcfd_controlled_drug_draft_v1',
   HISTORY: 'hcfd_controlled_drug_history_v1',
+  GAS_URL: 'hcfd_controlled_drug_gas_url_v1',
   SERIAL_COUNTER: 'hcfd_controlled_drug_seq_v1',
   CUSTOM_OPTIONS: 'hcfd_controlled_drug_custom_options_v1'
 };
 
 // 常見管制藥品快速帶入字典（含預設項目，並會自動學習使用者手動填入的新藥品與屬性）
 const COMMON_DRUGS_DICT = {
-  '吩坦尼注射液': { en: 'Fentanyl Injection', level: '二級', spec: '0.05mg/ml, 2ml/Amp', unit: '支(Amp)' },
-  '咪達唑侖注射液 (導美睡)': { en: 'Midazolam Injection (Dormicum)', level: '四級', spec: '5mg/ml, 3ml/Amp', unit: '支(Amp)' },
-  '氯硝西泮 (克癇平)': { en: 'Clonazepam', level: '四級', spec: '2mg/Tab', unit: '顆' },
-  '地西泮注射液 (煩寧)': { en: 'Diazepam Injection', level: '四級', spec: '10mg/2ml/Amp', unit: '支(Amp)' },
+  '納布芬注射液(芯奔)': { en: 'Nalbuphine (Bain Injection)', level: '非管制藥', spec: '10mg/ml, 1ml/Amp', unit: '支(Amp)' },
+  '咪達唑侖注射液(導美睡)': { en: 'Midazolam Injection (Dormicum)', level: '四級', spec: '5mg/ml, 3ml/Amp', unit: '支(Amp)' },
   '嗎啡注射液': { en: 'Morphine HCl Injection', level: '一級', spec: '10mg/1ml/Amp', unit: '支(Amp)' },
   '愷他命注射液': { en: 'Ketamine Injection', level: '三級', spec: '50mg/ml, 10ml/Vial', unit: '瓶(Vial)' }
 };
@@ -26,18 +28,102 @@ const photoState = {
   photo2: ''
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   loadCustomOptionsFromStorage();
   initDefaultDatesAndSerial();
   bindFormEvents();
   bindPhotoUploaders();
   bindToolbarAndModals();
-  loadDraftFromStorage();
+  initCloudUrlFromQueryOrDefault();
+  updateCloudStatusUI();
+
+  // 檢查網址是否帶有傳簽單號 (?id=HCFD-...)
+  const hasSharedId = await checkAndLoadSharedReportFromUrl();
+  if (!hasSharedId) {
+    loadDraftFromStorage();
+  }
   syncPrintView();
+  updateWorkflowProgressUI();
+  updateShareLinkDisplay();
 });
 
 /* ==========================================================================
-   0. 自動將使用者手動填入的項目加入常用選單 (Datalist & 藥品字典持久化)
+   0. 雲端網址解析與傳簽連結 (?id=單號&api=金鑰) 自動載入
+   ========================================================================== */
+function getActiveGasUrl() {
+  return localStorage.getItem(STORAGE_KEYS.GAS_URL) || DEFAULT_GAS_URL || '';
+}
+
+function initCloudUrlFromQueryOrDefault() {
+  const params = new URLSearchParams(window.location.search);
+  const apiParam = params.get('api');
+  if (apiParam) {
+    const fullUrl = apiParam.startsWith('http')
+      ? apiParam
+      : `https://script.google.com/macros/s/${apiParam}/exec`;
+    localStorage.setItem(STORAGE_KEYS.GAS_URL, fullUrl);
+  } else if (DEFAULT_GAS_URL && !localStorage.getItem(STORAGE_KEYS.GAS_URL)) {
+    localStorage.setItem(STORAGE_KEYS.GAS_URL, DEFAULT_GAS_URL);
+  }
+}
+
+function extractGasDeploymentId(url) {
+  const match = String(url || '').match(/\/macros\/s\/([^/]+)\/exec/);
+  return match ? match[1] : '';
+}
+
+function buildShareableUrl(serialNumber) {
+  const baseUrl = window.location.origin + window.location.pathname;
+  const gasUrl = getActiveGasUrl();
+  const depId = extractGasDeploymentId(gasUrl);
+  const params = new URLSearchParams();
+  params.set('id', serialNumber);
+  if (depId && !DEFAULT_GAS_URL) {
+    params.set('api', depId);
+  }
+  return `${baseUrl}?${params.toString()}`;
+}
+
+function updateShareLinkDisplay() {
+  const serial = document.getElementById('serialNumber').value.trim();
+  const shareInput = document.getElementById('shareLinkDisplay');
+  if (!shareInput || !serial) return;
+  shareInput.value = buildShareableUrl(serial);
+}
+
+async function checkAndLoadSharedReportFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const reportId = params.get('id');
+  if (!reportId) return false;
+
+  const gasUrl = getActiveGasUrl();
+  if (!gasUrl) {
+    showToast(`⚠️ 偵測到傳簽單號 ${reportId}，請先於右上角「雲端設定」貼上 Google Apps Script 網址`);
+    openModal('cloudConfigModal');
+    return false;
+  }
+
+  showToast(`⏳ 正在從 Google 雲端載入單號 ${reportId} 之傳簽資料...`);
+  try {
+    const res = await fetch(`${gasUrl}?action=getReport&id=${encodeURIComponent(reportId)}`);
+    const json = await res.json();
+    if (json && json.status === 'success' && json.record) {
+      populateFormData(json.record);
+      showToast(`✅ 已成功載入單號 ${reportId}！請填寫主管意見後點擊「儲存雲端並複製傳簽連結」`);
+      return true;
+    } else {
+      showToast(`⚠️ 雲端尚無單號 ${reportId} 之紀錄，將顯示本機資料`);
+      return false;
+    }
+  } catch (err) {
+    console.error('Load shared report error:', err);
+    showToast('⚠️ 無法從雲端讀取單據：' + err.message);
+    return false;
+  }
+}
+
+/* ==========================================================================
+   1. 自動將使用者手動填入的項目加入常用選單 (Datalist & 藥品字典持久化)
    ========================================================================== */
 function getStoredCustomOptions() {
   try {
@@ -77,7 +163,6 @@ function ensureDatalistOption(datalistId, value) {
 function loadCustomOptionsFromStorage() {
   const custom = getStoredCustomOptions();
 
-  // 1. 合併自訂藥品字典並加入 #commonDrugsZh
   if (custom.drugs && typeof custom.drugs === 'object') {
     Object.keys(custom.drugs).forEach((zhName) => {
       COMMON_DRUGS_DICT[zhName] = {
@@ -88,7 +173,6 @@ function loadCustomOptionsFromStorage() {
     });
   }
 
-  // 2. 將自訂分隊、英文藥名、單位、規格、報案受理單位加入對應選單
   (custom.squads || []).forEach((v) => ensureDatalistOption('squadList', v));
   (custom.drugNamesEn || []).forEach((v) => ensureDatalistOption('commonDrugsEn', v));
   (custom.units || []).forEach((v) => ensureDatalistOption('unitList', v));
@@ -125,7 +209,6 @@ function learnUserCustomEntries() {
   addUnique(custom.specs, specVal, 'commonSpecs');
   addUnique(custom.policeUnits, policeUnitVal, 'commonPoliceUnits');
 
-  // 若有填寫藥品中文名稱，自動記錄其關聯的英文、管制級別、規格、單位至常用字典
   if (zhVal) {
     ensureDatalistOption('commonDrugsZh', zhVal);
     const existing = COMMON_DRUGS_DICT[zhVal] || {};
@@ -150,7 +233,7 @@ function learnUserCustomEntries() {
 }
 
 /* ==========================================================================
-   1. 初始化日期與流水號
+   2. 初始化日期與流水號
    ========================================================================== */
 function getTodayISO() {
   const now = new Date();
@@ -196,15 +279,15 @@ function initDefaultDatesAndSerial() {
 }
 
 /* ==========================================================================
-   2. 表單互動與連動事件綁定
+   3. 表單互動與連動事件綁定
    ========================================================================== */
 function bindFormEvents() {
   const form = document.getElementById('incidentForm');
 
-  // 任何欄位變動時：同步列印檢視 + 自動儲存草稿 + 檢查日期一致性
   form.addEventListener('input', () => {
     handleConditionalUI();
     syncPrintView();
+    updateWorkflowProgressUI();
     checkDateConsistencyHint();
     saveDraftToStorage(true);
   });
@@ -213,11 +296,11 @@ function bindFormEvents() {
     handleConditionalUI();
     learnUserCustomEntries();
     syncPrintView();
+    updateWorkflowProgressUI();
     checkDateConsistencyHint();
     saveDraftToStorage(true);
   });
 
-  // 當各常用欄位離開焦點 (blur) 時，自動將手動輸入的新項目存入常用選單
   ['unit', 'drugNameZh', 'drugNameEn', 'drugUnit', 'drugSpec', 'policeUnit'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) {
@@ -231,6 +314,7 @@ function bindFormEvents() {
   document.getElementById('btnRegenSerial').addEventListener('click', () => {
     document.getElementById('serialNumber').value = generateSerialNumber(true);
     syncPrintView();
+    updateShareLinkDisplay();
     saveDraftToStorage(true);
     showToast('已產生新流水號：' + document.getElementById('serialNumber').value);
   });
@@ -255,6 +339,17 @@ function bindFormEvents() {
       saveDraftToStorage(true);
     }
   });
+
+  // 分隊長「責任判定」單選互斥（故意 / 過失 / 其他）與（能確定責任 / 無法確定責任）
+  bindMutuallyExclusiveCheckboxes('chiefDutyType');
+  bindMutuallyExclusiveCheckboxes('chiefDutyCert');
+
+  // 當四級主管填寫意見時，若該主管日期欄為空，自動帶入今日日期方便簽核
+  bindAutoSupervisorDate('chiefOpinion', 'chiefDate');
+  bindAutoSupervisorDate('doctorOpinion', 'doctorDate');
+  bindAutoSupervisorDate('emsOpinion', 'emsDate');
+  bindAutoSupervisorDate('pharmacyAction', 'pharmacyDate');
+  bindAutoSupervisorDate('pharmacyAdvice', 'pharmacyDate');
 
   // 藥品中文名稱選擇時，自動帶入英文、級別、規格、單位
   document.getElementById('drugNameZh').addEventListener('change', (e) => {
@@ -291,13 +386,14 @@ function bindFormEvents() {
 
     document.getElementById('reportContent').value =
       `一、本分隊（${unit}）${reporter}於上述發生時間執行勤務／藥品清點時${caseNote}，不慎發生「${drug}」${qty}${drugUnit}安瓿破損情事。\n` +
-      `二、事發當下立即保留破損安瓿殘品、外盒並拍照存證，同時同步通報分隊長及仁慈醫院藥劑科，並登載於收支結存簿冊及使用紀錄單（姓名欄註記「破損」）。`;
+      `二、事發當下立即保留破損安瓿殘品、外盒並拍照存證，同時同步通報分隊長及醫院藥劑科，並登載於收支結存簿冊及使用紀錄單（姓名欄註記「破損」）。`;
 
     if (!document.getElementById('improve1').value) {
       document.getElementById('improve1').value = '加強出勤救護藥箱防撞緩衝固定，取用安瓿時雙手確認握穩。';
       document.getElementById('improve2').value = '落實交接班與出勤前後雙人覆核清點機制。';
     }
     syncPrintView();
+    updateWorkflowProgressUI();
     saveDraftToStorage(true);
     showToast('已套用「藥品破損」報告與改善方案範本');
   });
@@ -311,7 +407,7 @@ function bindFormEvents() {
 
     document.getElementById('reportContent').value =
       `一、本分隊（${unit}）${reporter}於上述時間返隊清點救護車管制藥品時，發現「${drug}」短少${qty}${drugUnit}。\n` +
-      `二、立即保留現場並發動全隊同仁搜尋未果，當下即同步通報分隊長、緊急救護科及仁慈醫院藥劑科，並立即前往轄區警察機關完成報案程序取得受（處）理案件證明單。`;
+      `二、立即保留現場並發動全隊同仁搜尋未果，當下即同步通報分隊長、緊急救護科及醫院藥劑科，並立即前往轄區警察機關完成報案程序取得受（處）理案件證明單。`;
 
     if (!document.getElementById('improve1').value) {
       document.getElementById('improve1').value = '救護現場使用管制藥品後，空安瓿與未用藥品立即歸入專用上鎖藥盒。';
@@ -319,20 +415,53 @@ function bindFormEvents() {
       document.getElementById('improve3').value = '強化每班交接清點紀錄與隨車藥箱上鎖管理。';
     }
     syncPrintView();
+    updateWorkflowProgressUI();
     saveDraftToStorage(true);
     showToast('已套用「藥品遺失」報告與改善方案範本');
   });
 
-  // 表單送出 (儲存並上傳雲端)
+  // 表單送出 (儲存雲端並複製傳簽連結)
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     learnUserCustomEntries();
-    await handleFormSubmit();
+    await handleFormSubmitAndCopyLink();
+  });
+
+  document.getElementById('btnSaveAndCopyLink').addEventListener('click', async () => {
+    learnUserCustomEntries();
+    await handleFormSubmitAndCopyLink();
+  });
+}
+
+function bindMutuallyExclusiveCheckboxes(groupName) {
+  const boxes = document.querySelectorAll(`input[name="${groupName}"]`);
+  boxes.forEach((box) => {
+    box.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        boxes.forEach((other) => {
+          if (other !== e.target) other.checked = false;
+        });
+        syncPrintView();
+        updateWorkflowProgressUI();
+        saveDraftToStorage(true);
+      }
+    });
+  });
+}
+
+function bindAutoSupervisorDate(inputId, dateId) {
+  const inputEl = document.getElementById(inputId);
+  const dateEl = document.getElementById(dateId);
+  if (!inputEl || !dateEl) return;
+  inputEl.addEventListener('input', () => {
+    if (inputEl.value.trim() && !dateEl.value) {
+      dateEl.value = getTodayISO();
+      syncPrintView();
+    }
   });
 }
 
 function handleConditionalUI() {
-  // 1. 無案件編號勾選時，停用案件編號輸入框
   const noCaseChk = document.getElementById('noCaseNumber');
   const caseInput = document.getElementById('caseNumber');
   if (noCaseChk.checked) {
@@ -344,7 +473,6 @@ function handleConditionalUI() {
     caseInput.placeholder = '請輸入救護案件編號';
   }
 
-  // 2. 發生地點「其他」勾選時顯示文字框
   const otherPlaceChk = document.getElementById('occurPlaceOtherChk');
   const otherPlaceText = document.getElementById('occurPlaceOtherText');
   otherPlaceText.style.display = otherPlaceChk.checked ? 'block' : 'none';
@@ -364,8 +492,46 @@ function checkDateConsistencyHint() {
   }
 }
 
+function updateWorkflowProgressUI() {
+  const data = collectFormData();
+
+  const isReporterDone = Boolean(
+    data.incidentTypes.length > 0 &&
+    data.unit &&
+    data.drugNameZh &&
+    data.reporter &&
+    data.reportContent.trim()
+  );
+  const isChiefDone = Boolean(
+    data.chiefOpinion.trim() ||
+    data.chiefDutyTypes.length > 0 ||
+    data.chiefDutyCerts.length > 0
+  );
+  const isDoctorDone = Boolean(data.doctorOpinion.trim());
+  const isEmsDone = Boolean(data.emsOpinion.trim());
+  const isPharmacyDone = Boolean(data.pharmacyAction.trim() || data.pharmacyAdvice.trim());
+
+  setStepChipState('stepChipReporter', '① 事故人員填報', isReporterDone);
+  setStepChipState('stepChipChief', '② 分隊長意見', isChiefDone);
+  setStepChipState('stepChipDoctor', '③ 醫療指導醫師', isDoctorDone);
+  setStepChipState('stepChipEms', '④ 緊急救護科主管', isEmsDone);
+  setStepChipState('stepChipPharmacy', '⑤ 醫院藥劑科主任', isPharmacyDone);
+}
+
+function setStepChipState(chipId, label, isDone) {
+  const el = document.getElementById(chipId);
+  if (!el) return;
+  if (isDone) {
+    el.classList.add('done');
+    el.textContent = `${label} ✓`;
+  } else {
+    el.classList.remove('done');
+    el.textContent = label;
+  }
+}
+
 /* ==========================================================================
-   3. 照片上傳、拖曳與自動壓縮預覽 (照片一 / 照片二)
+   4. 照片上傳、拖曳與自動壓縮預覽 (照片一 / 照片二)
    ========================================================================== */
 function bindPhotoUploaders() {
   setupSinglePhotoSlot(1, 'dropzone1', 'photoInput1', 'previewImg1', 'btnRemovePhoto1');
@@ -459,7 +625,7 @@ function processImageFile(file, stateKey, dropzone, previewImg) {
 }
 
 /* ==========================================================================
-   4. A4 紙本列印檢視同步（將使用者填入的值套用「藍色」.user-val）與「一式三聯」產生器
+   5. A4 紙本列印檢視同步（將使用者與主管填入的值套用「藍色」.user-val）與「一式三聯」產生器
    ========================================================================== */
 function blueSpan(text) {
   if (text === undefined || text === null || String(text).trim() === '') return '';
@@ -481,6 +647,13 @@ function formatROCDateHtml(isoDateStr) {
   const m = parseInt(parts[1], 10);
   const d = parseInt(parts[2], 10);
   return `${blueSpan(rocY)} 年 ${blueSpan(m)} 月 ${blueSpan(d)} 日`;
+}
+
+function formatSupervisorDateSlotHtml(isoDateStr) {
+  if (!isoDateStr) {
+    return '日期：<span class="date-blank"></span>年<span class="date-blank"></span>月<span class="date-blank"></span>日';
+  }
+  return `日期：${formatROCDateHtml(isoDateStr)}`;
 }
 
 function formatROCDateTimeHtml(isoDateStr, timeStr) {
@@ -579,7 +752,7 @@ function syncPrintView() {
   const pDoc = document.getElementById('policeDocNo').value.trim();
 
   document.getElementById('print_policeReport').innerHTML =
-    `遺失／失竊報案證明：${chkOptionHtml(pNA, '不適用（損壞）')}　${chkOptionHtml(pRep, '已報案：')}受理單位 ${pUnit ? blueSpan(pUnit) : '　　　　'}　日期 ${pDate}　文號 ${pDoc ? blueSpan(pDoc) : '　　　　'}`;
+    `遺失／失竊報案證明：${chkOptionHtml(pNA, '不適用(損壞)')}　${chkOptionHtml(pRep, '已報案：')}受理單位 ${pUnit ? blueSpan(pUnit) : '　　　　'}　日期 ${pDate}　文號 ${pDoc ? blueSpan(pDoc) : '　　　　'}`;
 
   // 10. 改善方案
   const imp1 = document.getElementById('improve1').value.trim();
@@ -587,6 +760,45 @@ function syncPrintView() {
   const imp3 = document.getElementById('improve3').value.trim();
   document.getElementById('print_improvements').innerHTML =
     `<div>1. ${blueSpan(imp1)}</div><div>2. ${blueSpan(imp2)}</div><div>3. ${blueSpan(imp3)}</div>`;
+
+  // 11. 分隊長 主管意見（電子填寫值套用藍色，簽章維持紙本蓋章空白）
+  const chiefDutyTypes = Array.from(document.querySelectorAll('input[name="chiefDutyType"]:checked')).map(el => el.value);
+  const chiefDutyOther = document.getElementById('chiefDutyOther').value.trim();
+  const chiefDutyCerts = Array.from(document.querySelectorAll('input[name="chiefDutyCert"]:checked')).map(el => el.value);
+
+  document.getElementById('print_chiefDutyLeft').innerHTML =
+    `責任判定：${chkOptionHtml(chiefDutyTypes.includes('故意'), '故意')}　` +
+    `${chkOptionHtml(chiefDutyTypes.includes('過失'), '過失')}　` +
+    `${chkOptionHtml(chiefDutyTypes.includes('其他'), '其他：')}${chiefDutyOther ? blueSpan(chiefDutyOther) : '＿＿＿＿'}`;
+
+  document.getElementById('print_chiefDutyRight').innerHTML =
+    `${chkOptionHtml(chiefDutyCerts.includes('能確定責任'), '能確定責任')}　` +
+    `${chkOptionHtml(chiefDutyCerts.includes('無法確定責任'), '無法確定責任')}`;
+
+  document.getElementById('print_chiefOpinion').innerHTML =
+    `意見：${blueSpan(document.getElementById('chiefOpinion').value.trim())}`;
+  document.getElementById('print_chiefDate').innerHTML =
+    formatSupervisorDateSlotHtml(document.getElementById('chiefDate').value);
+
+  // 12. 醫療指導 醫師意見
+  document.getElementById('print_doctorOpinion').innerHTML =
+    `意見：${blueSpan(document.getElementById('doctorOpinion').value.trim())}`;
+  document.getElementById('print_doctorDate').innerHTML =
+    formatSupervisorDateSlotHtml(document.getElementById('doctorDate').value);
+
+  // 13. 緊急救護科 主管意見
+  document.getElementById('print_emsOpinion').innerHTML =
+    `意見：${blueSpan(document.getElementById('emsOpinion').value.trim())}`;
+  document.getElementById('print_emsDate').innerHTML =
+    formatSupervisorDateSlotHtml(document.getElementById('emsDate').value);
+
+  // 14. 醫院 藥劑科主任 意見
+  document.getElementById('print_pharmacyAction').innerHTML =
+    `處理方式：${blueSpan(document.getElementById('pharmacyAction').value.trim())}`;
+  document.getElementById('print_pharmacyAdvice').innerHTML =
+    `其他建議：${blueSpan(document.getElementById('pharmacyAdvice').value.trim())}`;
+  document.getElementById('print_pharmacyDate').innerHTML =
+    formatSupervisorDateSlotHtml(document.getElementById('pharmacyDate').value);
 }
 
 function triggerPrintA4() {
@@ -599,7 +811,7 @@ function triggerPrintA4() {
   cloneContainer.innerHTML = '';
 
   if (mode === 'triplicate') {
-    document.getElementById('currentCopyBadge').textContent = '第一聯：仁慈醫院藥劑科留存';
+    document.getElementById('currentCopyBadge').textContent = '第一聯：醫院藥劑科留存';
     cloneContainer.classList.add('active-triplicate');
 
     const copies = [
@@ -628,7 +840,7 @@ function triggerPrintA4() {
 }
 
 /* ==========================================================================
-   5. 資料序列化、本機草稿儲存、JSON 匯出匯入
+   6. 資料序列化、本機草稿儲存、JSON 匯出匯入
    ========================================================================== */
 function collectFormData() {
   const getCheckedValues = (name) =>
@@ -667,6 +879,19 @@ function collectFormData() {
     improve1: document.getElementById('improve1').value.trim(),
     improve2: document.getElementById('improve2').value.trim(),
     improve3: document.getElementById('improve3').value.trim(),
+    // 四級主管意見與日期欄位
+    chiefDutyTypes: getCheckedValues('chiefDutyType'),
+    chiefDutyOther: document.getElementById('chiefDutyOther').value.trim(),
+    chiefDutyCerts: getCheckedValues('chiefDutyCert'),
+    chiefOpinion: document.getElementById('chiefOpinion').value,
+    chiefDate: document.getElementById('chiefDate').value,
+    doctorOpinion: document.getElementById('doctorOpinion').value,
+    doctorDate: document.getElementById('doctorDate').value,
+    emsOpinion: document.getElementById('emsOpinion').value,
+    emsDate: document.getElementById('emsDate').value,
+    pharmacyAction: document.getElementById('pharmacyAction').value.trim(),
+    pharmacyAdvice: document.getElementById('pharmacyAdvice').value.trim(),
+    pharmacyDate: document.getElementById('pharmacyDate').value,
     savedAt: new Date().toISOString()
   };
 }
@@ -704,11 +929,14 @@ function populateFormData(data) {
   document.getElementById('contactPhone').value = data.contactPhone || '';
   document.getElementById('reportContent').value = data.reportContent || '';
 
-  // 照片還原
-  photoState.photo1 = data.photo1 || '';
-  photoState.photo2 = data.photo2 || '';
-  restorePhotoPreview(1, photoState.photo1);
-  restorePhotoPreview(2, photoState.photo2);
+  if (data.photo1 !== undefined) {
+    photoState.photo1 = data.photo1 || '';
+    restorePhotoPreview(1, photoState.photo1);
+  }
+  if (data.photo2 !== undefined) {
+    photoState.photo2 = data.photo2 || '';
+    restorePhotoPreview(2, photoState.photo2);
+  }
 
   setCheckboxes('policeStatus', data.policeStatuses);
   document.getElementById('policeUnit').value = data.policeUnit || '';
@@ -719,9 +947,25 @@ function populateFormData(data) {
   document.getElementById('improve2').value = data.improve2 || '';
   document.getElementById('improve3').value = data.improve3 || '';
 
+  // 還原四級主管意見與日期
+  setCheckboxes('chiefDutyType', data.chiefDutyTypes);
+  document.getElementById('chiefDutyOther').value = data.chiefDutyOther || '';
+  setCheckboxes('chiefDutyCert', data.chiefDutyCerts);
+  document.getElementById('chiefOpinion').value = data.chiefOpinion || '';
+  document.getElementById('chiefDate').value = data.chiefDate || '';
+  document.getElementById('doctorOpinion').value = data.doctorOpinion || '';
+  document.getElementById('doctorDate').value = data.doctorDate || '';
+  document.getElementById('emsOpinion').value = data.emsOpinion || '';
+  document.getElementById('emsDate').value = data.emsDate || '';
+  document.getElementById('pharmacyAction').value = data.pharmacyAction || '';
+  document.getElementById('pharmacyAdvice').value = data.pharmacyAdvice || '';
+  document.getElementById('pharmacyDate').value = data.pharmacyDate || '';
+
   handleConditionalUI();
   learnUserCustomEntries();
   syncPrintView();
+  updateWorkflowProgressUI();
+  updateShareLinkDisplay();
   checkDateConsistencyHint();
 }
 
@@ -747,7 +991,7 @@ function saveDraftToStorage(isAuto = false) {
     const nowStr = new Date().toLocaleTimeString('zh-TW', { hour12: false });
     document.getElementById('autoSaveTimestamp').textContent = `草稿已自動儲存 (${nowStr})`;
     if (!isAuto) {
-      showToast('💾 草稿已儲存至本機瀏覽器（手動輸入項目已同步加入常用選單）');
+      showToast('💾 草稿已儲存至本機瀏覽器');
     }
   } catch (e) {
     console.warn('Draft save warning:', e);
@@ -767,7 +1011,7 @@ function loadDraftFromStorage() {
 }
 
 /* ==========================================================================
-   6. 表單必填檢核與本機歷史紀錄管理
+   7. 雲端傳簽儲存 (Google Apps Script) 與專屬傳簽連結複製
    ========================================================================== */
 function validateFormBeforeSubmit(data) {
   const missing = [];
@@ -788,13 +1032,24 @@ function validateFormBeforeSubmit(data) {
   return missing;
 }
 
-function handleFormSubmit() {
+function computeLocalProgressSummary(d) {
+  const done = [];
+  if (d.chiefOpinion || (d.chiefDutyTypes && d.chiefDutyTypes.length) || (d.chiefDutyCerts && d.chiefDutyCerts.length)) done.push('分隊長');
+  if (d.doctorOpinion) done.push('指導醫師');
+  if (d.emsOpinion) done.push('救護科');
+  if (d.pharmacyAction || d.pharmacyAdvice) done.push('藥劑科');
+  if (done.length === 0) return '待主管簽核 (0/4)';
+  if (done.length === 4) return '✅ 全部主管已填畢 (4/4 可列印)';
+  return `傳簽中 (${done.length}/4：${done.join('、')})`;
+}
+
+async function handleFormSubmitAndCopyLink() {
   const data = collectFormData();
   const missingFields = validateFormBeforeSubmit(data);
   const banner = document.getElementById('validationBanner');
 
   if (missingFields.length > 0) {
-    banner.innerHTML = `❌ <strong>請補齊以下必填欄位後再行儲存：</strong>${missingFields.join('、')}`;
+    banner.innerHTML = `❌ <strong>請補齊以下基本欄位後再行儲存傳簽：</strong>${missingFields.join('、')}`;
     banner.classList.add('show');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     showToast('⚠️ 尚有必填欄位未填寫');
@@ -802,8 +1057,70 @@ function handleFormSubmit() {
   }
 
   banner.classList.remove('show');
+  data.signProgress = computeLocalProgressSummary(data);
   saveRecordToLocalHistory(data);
-  showToast('✅ 已通過檢核並存入本機歷史紀錄！您可點選「預覽列印 / 匯出 A4 PDF」輸出表單。');
+
+  const gasUrl = getActiveGasUrl();
+  if (!gasUrl) {
+    openModal('cloudConfigModal');
+    showToast('⚠️ 請先完成「Google 雲端設定」，即可產生跨裝置主管傳簽連結！');
+    return;
+  }
+
+  const submitBtn = document.getElementById('btnSubmitCloud');
+  const shareBtn = document.getElementById('btnSaveAndCopyLink');
+  const origSubmitText = submitBtn.innerHTML;
+  const origShareText = shareBtn.innerHTML;
+
+  submitBtn.disabled = true;
+  shareBtn.disabled = true;
+  submitBtn.innerHTML = '⏳ 正在同步雲端傳簽資料...';
+  shareBtn.innerHTML = '⏳ 正在同步雲端...';
+
+  try {
+    const response = await fetch(gasUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'submitReport',
+        payload: data
+      })
+    });
+
+    const result = await response.json();
+    if (result && result.status === 'success') {
+      if (result.serialNumber) {
+        document.getElementById('serialNumber').value = result.serialNumber;
+        data.serialNumber = result.serialNumber;
+        syncPrintView();
+      }
+      data.signProgress = result.signProgress || computeLocalProgressSummary(data);
+      saveRecordToLocalHistory(data);
+
+      const shareUrl = buildShareableUrl(data.serialNumber);
+      document.getElementById('shareLinkDisplay').value = shareUrl;
+
+      // 更新瀏覽器網址列方便直接重新整理或分享
+      window.history.replaceState({}, '', `?id=${encodeURIComponent(data.serialNumber)}`);
+
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        showToast('🎉 已儲存至雲端並自動複製「傳簽連結」！可直接貼上 LINE 傳給主管或同仁。');
+      } catch (clipErr) {
+        showToast('🎉 已儲存至雲端！請複製上方傳簽連結傳給主管。');
+      }
+    } else {
+      throw new Error((result && result.message) || '雲端回傳未知錯誤');
+    }
+  } catch (err) {
+    console.error('GAS upload error:', err);
+    showToast('⚠️ 雲端同步失敗（已先保存於本機）：' + err.message);
+  } finally {
+    submitBtn.disabled = false;
+    shareBtn.disabled = false;
+    submitBtn.innerHTML = origSubmitText;
+    shareBtn.innerHTML = origShareText;
+  }
 }
 
 function getLocalHistoryList() {
@@ -845,6 +1162,7 @@ function renderHistoryTable() {
     .map((item, idx) => {
       const typeStr = (item.incidentTypes || []).join('/') || '未勾選';
       const badgeClass = typeStr.includes('遺失') ? 'badge-lost' : 'badge-damage';
+      const progressText = item.signProgress || computeLocalProgressSummary(item);
       return `
         <tr>
           <td style="font-weight:700; color:var(--user-blue);">${escapeHtml(item.serialNumber || '')}</td>
@@ -852,8 +1170,8 @@ function renderHistoryTable() {
           <td>${escapeHtml(item.unit || '')}</td>
           <td><span class="badge-type ${badgeClass}">${escapeHtml(typeStr)}</span></td>
           <td>${escapeHtml(item.drugNameZh || '')}</td>
-          <td>${escapeHtml((item.drugQty || '') + ' ' + (item.drugUnit || ''))}</td>
           <td>${escapeHtml(item.reporter || '')}</td>
+          <td style="font-weight:600;">${escapeHtml(progressText)}</td>
           <td>
             <button type="button" class="btn-mini" data-load-idx="${idx}">載入表單</button>
             <button type="button" class="btn-mini" style="color:#DC2626; border-color:#FCA5A5; background:#FEF2F2;" data-del-idx="${idx}">刪除</button>
@@ -864,7 +1182,7 @@ function renderHistoryTable() {
     .join('');
 
   tbody.querySelectorAll('[data-load-idx]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const index = parseInt(btn.getAttribute('data-load-idx'), 10);
       const record = list[index];
       if (record) {
@@ -887,7 +1205,7 @@ function renderHistoryTable() {
 }
 
 /* ==========================================================================
-   7. 工具列按鈕與 Modal 視窗控制
+   8. 工具列按鈕與 Modal 視窗控制
    ========================================================================== */
 function bindToolbarAndModals() {
   document.getElementById('btnPrintTop').addEventListener('click', triggerPrintA4);
@@ -898,18 +1216,22 @@ function bindToolbarAndModals() {
   });
 
   document.getElementById('btnResetForm').addEventListener('click', () => {
-    if (!confirm('確定要清空目前表單所有內容並重新填寫嗎？')) return;
+    if (!confirm('確定要清空目前表單所有內容並建立新單號嗎？')) return;
     document.getElementById('incidentForm').reset();
     photoState.photo1 = '';
     photoState.photo2 = '';
     restorePhotoPreview(1, '');
     restorePhotoPreview(2, '');
     localStorage.removeItem(STORAGE_KEYS.DRAFT);
+    window.history.replaceState({}, '', window.location.pathname);
+    document.getElementById('serialNumber').value = generateSerialNumber(true);
     initDefaultDatesAndSerial();
     handleConditionalUI();
     syncPrintView();
+    updateWorkflowProgressUI();
+    updateShareLinkDisplay();
     document.getElementById('validationBanner').classList.remove('show');
-    showToast('✨ 表單已清空重置');
+    showToast('✨ 表單已清空並產生新單號');
   });
 
   document.getElementById('btnExportJson').addEventListener('click', () => {
@@ -950,11 +1272,83 @@ function bindToolbarAndModals() {
     openModal('historyModal');
   });
 
+  document.getElementById('btnOpenCloudConfig').addEventListener('click', () => {
+    document.getElementById('gasWebAppUrl').value = getActiveGasUrl();
+    openModal('cloudConfigModal');
+  });
+
+  document.getElementById('btnSaveCloudConfig').addEventListener('click', () => {
+    const url = document.getElementById('gasWebAppUrl').value.trim();
+    localStorage.setItem(STORAGE_KEYS.GAS_URL, url);
+    updateCloudStatusUI();
+    updateShareLinkDisplay();
+    closeModal('cloudConfigModal');
+    showToast(url ? '☁️ 已儲存 Google 雲端傳簽網址！' : '已清除雲端設定');
+  });
+
+  document.getElementById('btnTestCloudConn').addEventListener('click', async () => {
+    const url = document.getElementById('gasWebAppUrl').value.trim();
+    if (!url) {
+      showToast('⚠️ 請先貼上 Google Apps Script 網頁應用程式網址');
+      return;
+    }
+    showToast('🔌 正在測試連線至 Google Apps Script...');
+    try {
+      const res = await fetch(`${url}?action=ping`);
+      const json = await res.json();
+      if (json && json.status === 'success') {
+        showToast('✅ 連線成功！' + (json.message || 'Google 試算表後端運作正常'));
+      } else {
+        showToast('⚠️ 收到回應但狀態異常，請確認部署權限設為「所有人」');
+      }
+    } catch (err) {
+      showToast('❌ 連線測試失敗：請確認網址為 /exec 結尾且部署權限為「所有人」');
+    }
+  });
+
+  document.getElementById('btnFetchCloudRecords').addEventListener('click', async () => {
+    const url = getActiveGasUrl();
+    if (!url) {
+      showToast('⚠️ 請先於「雲端設定」填寫 Google Apps Script 網址');
+      return;
+    }
+    showToast('🔄 正在從 Google 試算表同步最新傳簽進度...');
+    try {
+      const res = await fetch(`${url}?action=listReports`);
+      const json = await res.json();
+      if (json && json.status === 'success' && Array.isArray(json.records)) {
+        json.records.forEach((rec) => {
+          saveRecordToLocalHistory(rec);
+        });
+        renderHistoryTable();
+        showToast(`✅ 成功同步 ${json.records.length} 筆雲端傳簽紀錄`);
+      } else {
+        throw new Error('回傳格式不符');
+      }
+    } catch (err) {
+      showToast('❌ 無法取得雲端紀錄：' + err.message);
+    }
+  });
+
   document.querySelectorAll('[data-close-modal]').forEach((btn) => {
     btn.addEventListener('click', () => {
       closeModal(btn.getAttribute('data-close-modal'));
     });
   });
+}
+
+function updateCloudStatusUI() {
+  const url = getActiveGasUrl();
+  const dot = document.getElementById('cloudStatusDot');
+  const text = document.getElementById('cloudStatusText');
+  if (!dot || !text) return;
+  if (url) {
+    dot.classList.remove('offline');
+    text.textContent = 'Google 雲端傳簽已連線';
+  } else {
+    dot.classList.add('offline');
+    text.textContent = '待設定雲端傳簽（點選右上角「雲端設定」）';
+  }
 }
 
 function openModal(id) {
@@ -973,7 +1367,7 @@ function showToast(message) {
   container.appendChild(toast);
   setTimeout(() => {
     toast.remove();
-  }, 3600);
+  }, 3800);
 }
 
 function escapeHtml(str) {

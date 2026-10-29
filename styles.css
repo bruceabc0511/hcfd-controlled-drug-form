@@ -307,6 +307,65 @@ body {
   display: block;
 }
 
+/* 線上傳簽進度與專屬連結卡片 */
+.workflow-share-card {
+  background: #FFFFFF;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workflow-steps-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.workflow-label {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.step-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: #F3F2F1;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-input);
+}
+
+.step-chip.done {
+  background: #ECFDF5;
+  color: #15803D;
+  border-color: #86EFAC;
+}
+
+.share-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.share-url-input {
+  flex: 1 1 260px;
+  background: #FFF9F6;
+  border-color: var(--primary-border);
+  font-size: 13px;
+}
+
 /* ==========================================================================
    Paper Form Sheet Container
    ========================================================================== */
@@ -788,8 +847,96 @@ body {
 }
 
 /* ==========================================================================
-   Paper Handwriting Sections (Supervisor 4 Levels - Read-only Layout)
+   Supervisor 4 Levels (電子填寫意見與日期，簽章欄維持列印紙本後蓋章)
    ========================================================================== */
+.supervisor-row th.field-label {
+  background-color: var(--primary-light);
+}
+
+.supervisor-cell {
+  background-color: #FFFFFF;
+  font-family: var(--font-doc);
+  color: #000000;
+  padding: 8px 12px !important;
+  position: relative;
+}
+
+.supervisor-input-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.supervisor-duty-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.supervisor-opinion-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.supervisor-inline-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.supervisor-inline-field .input-text {
+  flex: 1 1 220px;
+}
+
+.supervisor-sublabel {
+  font-weight: 700;
+  font-size: 14.5px;
+  white-space: nowrap;
+}
+
+.supervisor-textarea {
+  min-height: 52px;
+}
+
+.supervisor-sign-date-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px 28px;
+  padding-top: 2px;
+}
+
+.stamp-notice {
+  font-weight: 700;
+  font-size: 14.5px;
+  color: #1F1F1F;
+  min-width: 170px;
+}
+
+.stamp-hint {
+  font-weight: 500;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.supervisor-date-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 14.5px;
+}
+
+.supervisor-date-input .input-date {
+  width: auto;
+  min-width: 145px;
+}
+
 .handwriting-row th.field-label {
   background-color: #F4EFEA;
 }
@@ -1301,8 +1448,16 @@ body {
   .datetime-date,
   .datetime-time,
   .qty-unit-item,
-  .police-field-item {
+  .police-field-item,
+  .share-link-row .btn,
+  .supervisor-date-input,
+  .supervisor-date-input .input-date {
     flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .supervisor-sign-date-bar {
+    justify-content: flex-start;
   }
 
   .handwriting-badge {
@@ -1337,10 +1492,11 @@ body {
     print-color-adjust: exact !important;
   }
 
-  /* 強制隱藏所有非列印介面元件 */
+  /* Hide screen-only UI elements */
   .no-print,
   .top-navbar,
   .info-banner,
+  .workflow-share-card,
   .validation-banner,
   .bottom-submit-bar,
   .handwriting-badge,
