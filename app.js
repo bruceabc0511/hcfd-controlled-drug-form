@@ -12,10 +12,8 @@ const STORAGE_KEYS = {
 
 // 常見管制藥品快速帶入字典（含預設項目，並會自動學習使用者手動填入的新藥品與屬性）
 const COMMON_DRUGS_DICT = {
-  '吩坦尼注射液': { en: 'Fentanyl Injection', level: '二級', spec: '0.05mg/ml, 2ml/Amp', unit: '支(Amp)' },
+  '納布芬注射液': { en: 'Nalbuphine (Bain Injection)', level: '非管制藥', spec: '10mg/ml, 1ml/Amp', unit: '支(Amp)' },
   '咪達唑侖注射液 (導美睡)': { en: 'Midazolam Injection (Dormicum)', level: '四級', spec: '5mg/ml, 3ml/Amp', unit: '支(Amp)' },
-  '氯硝西泮 (克癇平)': { en: 'Clonazepam', level: '四級', spec: '2mg/Tab', unit: '顆' },
-  '地西泮注射液 (煩寧)': { en: 'Diazepam Injection', level: '四級', spec: '10mg/2ml/Amp', unit: '支(Amp)' },
   '嗎啡注射液': { en: 'Morphine HCl Injection', level: '一級', spec: '10mg/1ml/Amp', unit: '支(Amp)' },
   '愷他命注射液': { en: 'Ketamine Injection', level: '三級', spec: '50mg/ml, 10ml/Vial', unit: '瓶(Vial)' }
 };
