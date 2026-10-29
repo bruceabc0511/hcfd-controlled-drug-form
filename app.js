@@ -109,7 +109,7 @@ async function checkAndLoadSharedReportFromUrl() {
     const json = await res.json();
     if (json && json.status === 'success' && json.record) {
       populateFormData(json.record);
-      showToast(`✅ 已成功載入單號 ${reportId}！請填寫主管意見後點擊「儲存雲端並複製傳簽連結」`);
+      showToast(`✅ 已成功載入單號 ${reportId}！請填寫主管意見後點擊「儲存並複製傳簽連結」`);
       return true;
     } else {
       showToast(`⚠️ 雲端尚無單號 ${reportId} 之紀錄，將顯示本機資料`);
