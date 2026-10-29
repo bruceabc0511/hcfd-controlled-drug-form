@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 新竹縣政府消防局 管制藥品損壞/遺失事故報告單 電子表單系統
  * 前端核心邏輯 (app.js) — 支援事故人員填報、四級主管電子傳簽、雲端同步與 A4 紙本列印蓋章
  */
@@ -41,6 +41,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const hasSharedId = await checkAndLoadSharedReportFromUrl();
   if (!hasSharedId) {
     loadDraftFromStorage();
+    setBaselineSnapshot();
   }
   syncPrintView();
   updateWorkflowProgressUI();
@@ -109,7 +110,8 @@ async function checkAndLoadSharedReportFromUrl() {
     const json = await res.json();
     if (json && json.status === 'success' && json.record) {
       populateFormData(json.record);
-      showToast(`✅ 已成功載入單號 ${reportId}！請填寫主管意見後點擊「儲存並複製傳簽連結」`);
+      setBaselineSnapshot(json.record);
+      showToast(`✅ 已成功載入單號 ${reportId}！請填寫主管意見後點擊「儲存 & 複製傳簽連結」`);
       return true;
     } else {
       showToast(`⚠️ 雲端尚無單號 ${reportId} 之紀錄，將顯示本機資料`);
@@ -840,8 +842,36 @@ function triggerPrintA4() {
 }
 
 /* ==========================================================================
-   6. 資料序列化、本機草稿儲存、JSON 匯出匯入
+   6. 資料序列化、本機草稿儲存、多人傳簽差分比對 (Dirty Fields)、JSON 匯出匯入
    ========================================================================== */
+let baselineFormDataSnapshot = null;
+
+function setBaselineSnapshot(data) {
+  const source = data || collectFormData();
+  baselineFormDataSnapshot = JSON.parse(JSON.stringify(source));
+}
+
+function getDirtyFields(currentData) {
+  if (!baselineFormDataSnapshot) {
+    return Object.keys(currentData);
+  }
+  const dirty = [];
+  for (const key in currentData) {
+    if (key === 'savedAt' || key === 'updatedAt') continue;
+    const curVal = currentData[key];
+    const baseVal = baselineFormDataSnapshot[key];
+
+    const isDiff = (Array.isArray(curVal) || Array.isArray(baseVal))
+      ? JSON.stringify(curVal || []) !== JSON.stringify(baseVal || [])
+      : String(curVal ?? '').trim() !== String(baseVal ?? '').trim();
+
+    if (isDiff) {
+      dirty.push(key);
+    }
+  }
+  return dirty;
+}
+
 function collectFormData() {
   const getCheckedValues = (name) =>
     Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map((el) => el.value);
@@ -929,13 +959,19 @@ function populateFormData(data) {
   document.getElementById('contactPhone').value = data.contactPhone || '';
   document.getElementById('reportContent').value = data.reportContent || '';
 
-  if (data.photo1 !== undefined) {
-    photoState.photo1 = data.photo1 || '';
+  if (data.photo1) {
+    photoState.photo1 = data.photo1;
     restorePhotoPreview(1, photoState.photo1);
+  } else if (data.photo1 === '' && data.photo1Cleared) {
+    photoState.photo1 = '';
+    restorePhotoPreview(1, '');
   }
-  if (data.photo2 !== undefined) {
-    photoState.photo2 = data.photo2 || '';
+  if (data.photo2) {
+    photoState.photo2 = data.photo2;
     restorePhotoPreview(2, photoState.photo2);
+  } else if (data.photo2 === '' && data.photo2Cleared) {
+    photoState.photo2 = '';
+    restorePhotoPreview(2, '');
   }
 
   setCheckboxes('policeStatus', data.policeStatuses);
@@ -1057,6 +1093,7 @@ async function handleFormSubmitAndCopyLink() {
   }
 
   banner.classList.remove('show');
+  const dirtyFields = getDirtyFields(data);
   data.signProgress = computeLocalProgressSummary(data);
   saveRecordToLocalHistory(data);
 
@@ -1083,7 +1120,8 @@ async function handleFormSubmitAndCopyLink() {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
         action: 'submitReport',
-        payload: data
+        payload: data,
+        dirtyFields: dirtyFields
       })
     });
 
@@ -1092,10 +1130,18 @@ async function handleFormSubmitAndCopyLink() {
       if (result.serialNumber) {
         document.getElementById('serialNumber').value = result.serialNumber;
         data.serialNumber = result.serialNumber;
-        syncPrintView();
       }
-      data.signProgress = result.signProgress || computeLocalProgressSummary(data);
-      saveRecordToLocalHistory(data);
+      if (result.record) {
+        populateFormData(result.record);
+        setBaselineSnapshot(result.record);
+        saveRecordToLocalHistory(result.record);
+      } else {
+        data.signProgress = result.signProgress || computeLocalProgressSummary(data);
+        saveRecordToLocalHistory(data);
+        setBaselineSnapshot(data);
+      }
+      syncPrintView();
+      updateWorkflowProgressUI();
 
       const shareUrl = buildShareableUrl(data.serialNumber);
       document.getElementById('shareLinkDisplay').value = shareUrl;
@@ -1105,9 +1151,9 @@ async function handleFormSubmitAndCopyLink() {
 
       try {
         await navigator.clipboard.writeText(shareUrl);
-        showToast('🎉 已儲存至雲端並自動複製「傳簽連結」！可直接貼上 LINE 傳給主管或同仁。');
+        showToast('🎉 已成功儲存至雲端並自動同步所有主管最新意見！已複製傳簽連結。');
       } catch (clipErr) {
-        showToast('🎉 已儲存至雲端！請複製上方傳簽連結傳給主管。');
+        showToast('🎉 已成功儲存至雲端並自動同步所有主管最新意見！請複製上方傳簽連結。');
       }
     } else {
       throw new Error((result && result.message) || '雲端回傳未知錯誤');
@@ -1204,12 +1250,92 @@ function renderHistoryTable() {
   });
 }
 
+/**
+ * 智慧從雲端同步最新傳簽進度：保留當前使用者正在打字的欄位，載入其他主管最新送出的意見
+ */
+async function syncLatestReportFromCloud(isSilent = false) {
+  const reportId = document.getElementById('serialNumber').value.trim();
+  const gasUrl = getActiveGasUrl();
+  if (!reportId || !gasUrl) return;
+
+  const syncBtn = document.getElementById('btnSyncCloudProgress');
+  if (syncBtn) {
+    syncBtn.classList.add('rotating');
+  }
+
+  if (!isSilent) {
+    showToast(`⏳ 正在同步單號 ${reportId} 雲端最新進度...`);
+  }
+
+  try {
+    const res = await fetch(`${gasUrl}?action=getReport&id=${encodeURIComponent(reportId)}`);
+    const json = await res.json();
+    if (json && json.status === 'success' && json.record) {
+      const current = collectFormData();
+      const currentDirty = getDirtyFields(current);
+
+      // 合併雲端最新資料與本地使用者目前正在輸入的欄位 (保護正在打字的欄位不被覆蓋)
+      const mergedToDisplay = Object.assign({}, json.record);
+      for (let i = 0; i < currentDirty.length; i++) {
+        const k = currentDirty[i];
+        mergedToDisplay[k] = current[k];
+      }
+
+      populateFormData(mergedToDisplay);
+
+      // 更新未編輯欄位的基線快照
+      if (baselineFormDataSnapshot) {
+        for (const k in json.record) {
+          if (currentDirty.indexOf(k) === -1) {
+            baselineFormDataSnapshot[k] = json.record[k];
+          }
+        }
+      }
+
+      saveRecordToLocalHistory(json.record);
+      syncPrintView();
+      updateWorkflowProgressUI();
+
+      if (!isSilent) {
+        const summary = json.record.signProgress || computeLocalProgressSummary(json.record);
+        showToast(`✅ 已同步最新傳簽進度！${summary}`);
+      }
+    } else if (!isSilent) {
+      showToast('⚠️ 雲端尚無此單號或更新失敗');
+    }
+  } catch (err) {
+    console.warn('Sync cloud progress error:', err);
+    if (!isSilent) {
+      showToast('⚠️ 同步雲端進度失敗：' + err.message);
+    }
+  } finally {
+    if (syncBtn) {
+      syncBtn.classList.remove('rotating');
+    }
+  }
+}
+
 /* ==========================================================================
    8. 工具列按鈕與 Modal 視窗控制
    ========================================================================== */
 function bindToolbarAndModals() {
   document.getElementById('btnPrintTop').addEventListener('click', triggerPrintA4);
   document.getElementById('btnPrintBottom').addEventListener('click', triggerPrintA4);
+
+  const btnSync = document.getElementById('btnSyncCloudProgress');
+  if (btnSync) {
+    btnSync.addEventListener('click', () => syncLatestReportFromCloud(false));
+  }
+
+  // 當使用者切換回此分頁時，自動於背景靜默檢查雲端是否有其他主管最新意見
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      const serial = document.getElementById('serialNumber').value.trim();
+      if (serial) {
+        syncLatestReportFromCloud(true);
+      }
+    }
+  });
 
   document.getElementById('btnSaveDraftManual').addEventListener('click', () => {
     saveDraftToStorage(false);

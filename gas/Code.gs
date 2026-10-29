@@ -71,6 +71,7 @@ function doPost(e) {
     const rawBody = e.postData && e.postData.contents ? e.postData.contents : '{}';
     const requestObj = JSON.parse(rawBody);
     const incoming = requestObj.payload || requestObj;
+    const incomingDirtyFields = Array.isArray(requestObj.dirtyFields) ? requestObj.dirtyFields : null;
 
     const sheet = ensureSheetInitialized_();
     const serialNumber = incoming.serialNumber || generateServerSerial_(sheet);
@@ -80,15 +81,15 @@ function doPost(e) {
     const existingRowInfo = findRowBySerial_(sheet, serialNumber);
     const existingData = existingRowInfo ? existingRowInfo.data : {};
 
-    // 合併既有資料與新送出資料
-    const merged = Object.assign({}, existingData, incoming);
+    // 合併既有資料與新送出資料（智慧三方合併：避免多人同時填寫不同主管意見時相互覆蓋）
+    const merged = smartMergeReportData_(existingData, incoming, incomingDirtyFields);
 
     // 處理照片上傳至 Google Drive
-    let photo1Url = existingData.photo1DriveUrl || '';
-    let photo2Url = existingData.photo2DriveUrl || '';
-    let photo1FileId = existingData.photo1FileId || '';
-    let photo2FileId = existingData.photo2FileId || '';
-    let folderUrl = existingData.driveFolderUrl || '';
+    let photo1Url = merged.photo1DriveUrl || existingData.photo1DriveUrl || '';
+    let photo2Url = merged.photo2DriveUrl || existingData.photo2DriveUrl || '';
+    let photo1FileId = merged.photo1FileId || existingData.photo1FileId || '';
+    let photo2FileId = merged.photo2FileId || existingData.photo2FileId || '';
+    let folderUrl = merged.driveFolderUrl || existingData.driveFolderUrl || '';
 
     const hasNewPhoto1 = incoming.photo1 && incoming.photo1.indexOf('data:image') === 0;
     const hasNewPhoto2 = incoming.photo2 && incoming.photo2.indexOf('data:image') === 0;
@@ -109,12 +110,14 @@ function doPost(e) {
       }
     }
 
-    // 若前端清除照片
-    if (incoming.photo1 === '') {
+    // 若前端明確指示清除照片（僅當 dirtyFields 指名 photo1 且傳入空字串）
+    const isPhoto1Dirty = incomingDirtyFields && incomingDirtyFields.indexOf('photo1') !== -1;
+    const isPhoto2Dirty = incomingDirtyFields && incomingDirtyFields.indexOf('photo2') !== -1;
+    if (isPhoto1Dirty && incoming.photo1 === '') {
       photo1Url = '';
       photo1FileId = '';
     }
-    if (incoming.photo2 === '') {
+    if (isPhoto2Dirty && incoming.photo2 === '') {
       photo2Url = '';
       photo2FileId = '';
     }
@@ -184,9 +187,10 @@ function doPost(e) {
       serialNumber: serialNumber,
       signProgress: signProgress,
       folderUrl: folderUrl,
+      record: jsonToStore,
       isUpdate: Boolean(existingRowInfo),
       message: existingRowInfo
-        ? '已成功更新單據與主管意見！'
+        ? '已成功儲存！已自動同步合併所有主管最新傳簽意見。'
         : '已成功建立雲端傳簽單據！'
     });
   } catch (err) {
@@ -197,6 +201,89 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * 智慧三方差分合併演算法：支援多人同時開啟傳簽連結填報，保護各主管意見不被空白欄位相互覆蓋
+ * @param {Object} existing 雲端試算表中目前既有的報告資料
+ * @param {Object} incoming 前端本次送出的表單資料
+ * @param {Array<string>|null} dirtyFields 前端標記本次實際修改的欄位清單
+ * @return {Object} 合併後的完整資料物件
+ */
+function smartMergeReportData_(existing, incoming, dirtyFields) {
+  if (!existing || Object.keys(existing).length === 0) {
+    return Object.assign({}, incoming);
+  }
+
+  const merged = Object.assign({}, existing);
+
+  function isEmptyVal_(v) {
+    if (v === undefined || v === null) return true;
+    if (typeof v === 'string' && v.trim() === '') return true;
+    if (Array.isArray(v) && v.length === 0) return true;
+    return false;
+  }
+
+  // 四級主管專屬欄位清單
+  const SUPERVISOR_FIELDS = [
+    'chiefDutyTypes', 'chiefDutyOther', 'chiefDutyCerts', 'chiefOpinion', 'chiefDate',
+    'doctorOpinion', 'doctorDate',
+    'emsOpinion', 'emsDate',
+    'pharmacyAction', 'pharmacyAdvice', 'pharmacyDate'
+  ];
+
+  if (Array.isArray(dirtyFields) && dirtyFields.length > 0) {
+    // 方案 A：精確差分合併（依前端實際修改之欄位更新，未修改者保留既有值）
+    for (var i = 0; i < dirtyFields.length; i++) {
+      var key = dirtyFields[i];
+      if (key in incoming) {
+        merged[key] = incoming[key];
+      }
+    }
+  } else {
+    // 方案 B：安全向後相容合併（若未傳入 dirtyFields，嚴禁以空白欄位覆寫既有內容）
+    for (var k in incoming) {
+      if (!incoming.hasOwnProperty(k)) continue;
+      var inVal = incoming[k];
+      var exVal = existing[k];
+
+      if (SUPERVISOR_FIELDS.indexOf(k) !== -1) {
+        // 主管欄位：若新值為空但既有已有內容，一律保留既有內容
+        if (!isEmptyVal_(inVal)) {
+          merged[k] = inVal;
+        } else if (isEmptyVal_(exVal)) {
+          merged[k] = inVal;
+        } else {
+          merged[k] = exVal;
+        }
+      } else {
+        // 基本資料欄位
+        if (!isEmptyVal_(inVal)) {
+          merged[k] = inVal;
+        } else if (isEmptyVal_(exVal)) {
+          merged[k] = inVal;
+        } else {
+          merged[k] = exVal;
+        }
+      }
+    }
+  }
+
+  // 確保單號與相片連結不丟失
+  merged.serialNumber = existing.serialNumber || incoming.serialNumber;
+  if (!incoming.photo1 && existing.photo1DriveUrl) {
+    merged.photo1DriveUrl = existing.photo1DriveUrl;
+    merged.photo1FileId = existing.photo1FileId;
+  }
+  if (!incoming.photo2 && existing.photo2DriveUrl) {
+    merged.photo2DriveUrl = existing.photo2DriveUrl;
+    merged.photo2FileId = existing.photo2FileId;
+  }
+  if (existing.driveFolderUrl) {
+    merged.driveFolderUrl = existing.driveFolderUrl;
+  }
+
+  return merged;
 }
 
 function computeApprovalStatusText_(d) {
