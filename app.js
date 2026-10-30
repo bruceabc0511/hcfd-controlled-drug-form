@@ -14,13 +14,46 @@ const STORAGE_KEYS = {
   CUSTOM_OPTIONS: 'hcfd_controlled_drug_custom_options_v1'
 };
 
-// 常見管制藥品快速帶入字典（含預設項目，並會自動學習使用者手動填入的新藥品與屬性）
-const COMMON_DRUGS_DICT = {
-  '納布芬注射液(芯奔)': { en: 'Nalbuphine (Bain Injection)', level: '非管制藥', spec: '10mg/ml, 1ml/Amp', unit: '支(Amp)' },
-  '咪達唑侖注射液(導美睡)': { en: 'Midazolam Injection (Dormicum)', level: '四級', spec: '5mg/ml, 3ml/Amp', unit: '支(Amp)' },
-  '嗎啡注射液': { en: 'Morphine HCl Injection', level: '一級', spec: '10mg/1ml/Amp', unit: '支(Amp)' },
-  '愷他命注射液': { en: 'Ketamine Injection', level: '三級', spec: '50mg/ml, 10ml/Vial', unit: '瓶(Vial)' }
-};
+// ============================================================================
+// 管制藥品清單與規格標準目錄（集中維護單一真實來源 SSOT）
+// 若未來需新增/修改/刪除藥品，直接在此陣列增減物件即可，所有下拉選單與聯動自動生效
+// ============================================================================
+const DRUG_CATALOG = [
+  {
+    zh: '納布芬注射液 (芯奔)',
+    en: 'Nalbuphine (Bain Injection)',
+    spec: '10mg/1mL/Amp',
+    level: '非管制藥',
+    unit: '支(Amp)'
+  },
+  {
+    zh: '咪達唑侖注射液 (導眠靜)',
+    en: 'Midazolam Injection (Dormicum)',
+    spec: '5mg/1mL/Amp',
+    level: '四級',
+    unit: '支(Amp)'
+  },
+  {
+    zh: '嗎啡注射液',
+    en: 'Morphine HCl Injection',
+    spec: '20mg/1mL/Amp',
+    level: '一級',
+    unit: '支(Amp)'
+  },
+  {
+    zh: '愷他命注射液 (克太拉)',
+    en: 'Ketamine Injection',
+    spec: '500mg/10mL/Vial',
+    level: '三級',
+    unit: '瓶(Vial)'
+  }
+];
+
+// 向後相容字典
+const COMMON_DRUGS_DICT = {};
+DRUG_CATALOG.forEach((d) => {
+  COMMON_DRUGS_DICT[d.zh] = { en: d.en, level: d.level, spec: d.spec, unit: d.unit };
+});
 
 // 儲存照片 Base64 狀態
 const photoState = {
@@ -29,6 +62,8 @@ const photoState = {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
+  initDrugDropdownOptions();
+  setupDrugSelectLinkage();
   loadCustomOptionsFromStorage();
   initDefaultDatesAndSerial();
   bindFormEvents();
@@ -124,8 +159,123 @@ async function checkAndLoadSharedReportFromUrl() {
   }
 }
 
+// ============================================================================
+// 1. 藥品標準下拉選單初始化與雙向自動連動
+// ============================================================================
+function initDrugDropdownOptions() {
+  const zhSelect = document.getElementById('drugNameZh');
+  const enSelect = document.getElementById('drugNameEn');
+  const specSelect = document.getElementById('drugSpec');
+
+  if (zhSelect) {
+    const curZh = zhSelect.value;
+    zhSelect.innerHTML = '<option value="">-- 請選擇中文藥名 --</option>' +
+      DRUG_CATALOG.map(d => `<option value="${escapeHtml(d.zh)}">${escapeHtml(d.zh)}</option>`).join('');
+    if (curZh) zhSelect.value = curZh;
+  }
+
+  if (enSelect) {
+    const curEn = enSelect.value;
+    enSelect.innerHTML = '<option value="">-- 請選擇英文藥名 --</option>' +
+      DRUG_CATALOG.map(d => `<option value="${escapeHtml(d.en)}">${escapeHtml(d.en)}</option>`).join('');
+    if (curEn) enSelect.value = curEn;
+  }
+
+  if (specSelect) {
+    const curSpec = specSelect.value;
+    specSelect.innerHTML = '<option value="">-- 請選擇規格 --</option>' +
+      DRUG_CATALOG.map(d => `<option value="${escapeHtml(d.spec)}">${escapeHtml(d.spec)}</option>`).join('');
+    if (curSpec) specSelect.value = curSpec;
+  }
+}
+
+function matchDrugInCatalog(zhOrEn) {
+  if (!zhOrEn) return null;
+  const str = String(zhOrEn).trim();
+  // 1. 完全符合
+  let found = DRUG_CATALOG.find(d => d.zh === str || d.en === str);
+  if (found) return found;
+
+  // 2. 忽略空白符號符合 (相容舊單據)
+  const clean = str.replace(/\s+/g, '');
+  found = DRUG_CATALOG.find(d => d.zh.replace(/\s+/g, '') === clean || d.en.replace(/\s+/g, '') === clean);
+  if (found) return found;
+
+  // 3. 關鍵字比對 (相容舊版括號名稱)
+  if (str.includes('納布芬') || str.toLowerCase().includes('nalbuphine')) return DRUG_CATALOG[0];
+  if (str.includes('咪達唑侖') || str.toLowerCase().includes('midazolam')) return DRUG_CATALOG[1];
+  if (str.includes('嗎啡') || str.toLowerCase().includes('morphine')) return DRUG_CATALOG[2];
+  if (str.includes('愷他命') || str.toLowerCase().includes('ketamine')) return DRUG_CATALOG[3];
+
+  return null;
+}
+
+function setupDrugSelectLinkage() {
+  const zhSelect = document.getElementById('drugNameZh');
+  const enSelect = document.getElementById('drugNameEn');
+  const specSelect = document.getElementById('drugSpec');
+  const levelSelect = document.getElementById('controlLevel');
+  const unitInput = document.getElementById('drugUnit');
+
+  if (!zhSelect || !enSelect) return;
+
+  // 1. 中文藥名變更時：自動帶入英文、規格、管制級別、單位
+  zhSelect.addEventListener('change', (e) => {
+    const val = e.target.value.trim();
+    const item = matchDrugInCatalog(val);
+    if (item) {
+      if (zhSelect.value !== item.zh) zhSelect.value = item.zh;
+      enSelect.value = item.en;
+      if (specSelect) specSelect.value = item.spec;
+      if (levelSelect) levelSelect.value = item.level;
+      if (unitInput && item.unit) unitInput.value = item.unit;
+    } else if (!val) {
+      enSelect.value = '';
+      if (specSelect) specSelect.value = '';
+      if (levelSelect) levelSelect.value = '';
+    }
+    syncPrintView();
+    updateWorkflowProgressUI();
+    saveDraftToStorage(true);
+  });
+
+  // 2. 英文藥名變更時：自動帶入中文、規格、管制級別、單位
+  enSelect.addEventListener('change', (e) => {
+    const val = e.target.value.trim();
+    const item = matchDrugInCatalog(val);
+    if (item) {
+      zhSelect.value = item.zh;
+      if (enSelect.value !== item.en) enSelect.value = item.en;
+      if (specSelect) specSelect.value = item.spec;
+      if (levelSelect) levelSelect.value = item.level;
+      if (unitInput && item.unit) unitInput.value = item.unit;
+    } else if (!val) {
+      zhSelect.value = '';
+      if (specSelect) specSelect.value = '';
+      if (levelSelect) levelSelect.value = '';
+    }
+    syncPrintView();
+    updateWorkflowProgressUI();
+    saveDraftToStorage(true);
+  });
+
+  // 3. 規格或管制級別手動微調
+  if (specSelect) {
+    specSelect.addEventListener('change', () => {
+      syncPrintView();
+      saveDraftToStorage(true);
+    });
+  }
+  if (levelSelect) {
+    levelSelect.addEventListener('change', () => {
+      syncPrintView();
+      saveDraftToStorage(true);
+    });
+  }
+}
+
 /* ==========================================================================
-   1. 自動將使用者手動填入的項目加入常用選單 (Datalist & 藥品字典持久化)
+   1. 自動將使用者手動填入的項目加入常用選單 (Datalist 單位、分隊持久化)
    ========================================================================== */
 function getStoredCustomOptions() {
   try {
@@ -165,20 +315,8 @@ function ensureDatalistOption(datalistId, value) {
 function loadCustomOptionsFromStorage() {
   const custom = getStoredCustomOptions();
 
-  if (custom.drugs && typeof custom.drugs === 'object') {
-    Object.keys(custom.drugs).forEach((zhName) => {
-      COMMON_DRUGS_DICT[zhName] = {
-        ...(COMMON_DRUGS_DICT[zhName] || {}),
-        ...custom.drugs[zhName]
-      };
-      ensureDatalistOption('commonDrugsZh', zhName);
-    });
-  }
-
   (custom.squads || []).forEach((v) => ensureDatalistOption('squadList', v));
-  (custom.drugNamesEn || []).forEach((v) => ensureDatalistOption('commonDrugsEn', v));
   (custom.units || []).forEach((v) => ensureDatalistOption('unitList', v));
-  (custom.specs || []).forEach((v) => ensureDatalistOption('commonSpecs', v));
   (custom.policeUnits || []).forEach((v) => ensureDatalistOption('commonPoliceUnits', v));
 }
 
@@ -197,33 +335,12 @@ function learnUserCustomEntries() {
   };
 
   const unitVal = document.getElementById('unit').value.trim();
-  const zhVal = document.getElementById('drugNameZh').value.trim();
-  const enVal = document.getElementById('drugNameEn').value.trim();
   const drugUnitVal = document.getElementById('drugUnit').value.trim();
-  const specVal = document.getElementById('drugSpec').value.trim();
   const policeUnitVal = document.getElementById('policeUnit').value.trim();
-  const checkedLevelEl = document.querySelector('input[name="controlLevel"]:checked');
-  const levelVal = checkedLevelEl ? checkedLevelEl.value : '';
 
   addUnique(custom.squads, unitVal, 'squadList');
-  addUnique(custom.drugNamesEn, enVal, 'commonDrugsEn');
   addUnique(custom.units, drugUnitVal, 'unitList');
-  addUnique(custom.specs, specVal, 'commonSpecs');
   addUnique(custom.policeUnits, policeUnitVal, 'commonPoliceUnits');
-
-  if (zhVal) {
-    ensureDatalistOption('commonDrugsZh', zhVal);
-    const existing = COMMON_DRUGS_DICT[zhVal] || {};
-    const merged = {
-      en: enVal || existing.en || '',
-      level: levelVal || existing.level || '',
-      spec: specVal || existing.spec || '',
-      unit: drugUnitVal || existing.unit || ''
-    };
-    COMMON_DRUGS_DICT[zhVal] = merged;
-    custom.drugs[zhVal] = merged;
-    updated = true;
-  }
 
   if (updated) {
     try {
@@ -303,7 +420,7 @@ function bindFormEvents() {
     saveDraftToStorage(true);
   });
 
-  ['unit', 'drugNameZh', 'drugNameEn', 'drugUnit', 'drugSpec', 'policeUnit'].forEach((id) => {
+  ['unit', 'drugUnit', 'policeUnit'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) {
       el.addEventListener('blur', () => {
@@ -352,29 +469,6 @@ function bindFormEvents() {
   bindAutoSupervisorDate('emsOpinion', 'emsDate');
   bindAutoSupervisorDate('pharmacyAction', 'pharmacyDate');
   bindAutoSupervisorDate('pharmacyAdvice', 'pharmacyDate');
-
-  // 藥品中文名稱選擇時，自動帶入英文、級別、規格、單位
-  document.getElementById('drugNameZh').addEventListener('change', (e) => {
-    const val = e.target.value.trim();
-    if (COMMON_DRUGS_DICT[val]) {
-      const info = COMMON_DRUGS_DICT[val];
-      const enEl = document.getElementById('drugNameEn');
-      const specEl = document.getElementById('drugSpec');
-      const unitEl = document.getElementById('drugUnit');
-
-      if (info.en) enEl.value = info.en;
-      if (info.spec) specEl.value = info.spec;
-      if (info.unit) unitEl.value = info.unit;
-
-      if (info.level) {
-        document.querySelectorAll('input[name="controlLevel"]').forEach((chk) => {
-          chk.checked = (chk.value === info.level);
-        });
-      }
-      syncPrintView();
-      saveDraftToStorage(true);
-    }
-  });
 
   // 報告內容快速範本按鈕
   document.getElementById('btnTplDamage').addEventListener('click', () => {
@@ -720,11 +814,11 @@ function syncPrintView() {
   document.getElementById('print_drugNameEn').innerHTML =
     `英文：${blueSpan(document.getElementById('drugNameEn').value.trim())}`;
 
-  const selectedLevels = Array.from(document.querySelectorAll('input[name="controlLevel"]:checked')).map(el => el.value);
+  const selectedLevel = document.getElementById('controlLevel').value.trim();
   document.getElementById('print_controlLevel').innerHTML =
-    `${chkOptionHtml(selectedLevels.includes('一級'), '一級')} ${chkOptionHtml(selectedLevels.includes('二級'), '二級')} ` +
-    `${chkOptionHtml(selectedLevels.includes('三級'), '三級')} ${chkOptionHtml(selectedLevels.includes('四級'), '四級')} ` +
-    `${chkOptionHtml(selectedLevels.includes('非管制藥'), '非管制藥')}`;
+    `${chkOptionHtml(selectedLevel === '一級', '一級')} ${chkOptionHtml(selectedLevel === '二級', '二級')} ` +
+    `${chkOptionHtml(selectedLevel === '三級', '三級')} ${chkOptionHtml(selectedLevel === '四級', '四級')} ` +
+    `${chkOptionHtml(selectedLevel === '非管制藥', '非管制藥')}`;
 
   const qty = document.getElementById('drugQty').value.trim();
   const dUnit = document.getElementById('drugUnit').value.trim();
@@ -876,24 +970,27 @@ function collectFormData() {
   const getCheckedValues = (name) =>
     Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map((el) => el.value);
 
-  return {
-    serialNumber: document.getElementById('serialNumber').value.trim(),
-    incidentTypes: getCheckedValues('incidentType'),
-    unit: document.getElementById('unit').value.trim(),
-    reportDate: document.getElementById('reportDate').value,
-    caseNumber: document.getElementById('caseNumber').value.trim(),
-    noCaseNumber: document.getElementById('noCaseNumber').checked,
-    emsRecordNumber: document.getElementById('emsRecordNumber').value.trim(),
-    occurDate: document.getElementById('occurDate').value,
-    occurTime: document.getElementById('occurTime').value,
-    occurPlaces: getCheckedValues('occurPlace'),
-    occurPlaceOtherText: document.getElementById('occurPlaceOtherText').value.trim(),
-    drugNameZh: document.getElementById('drugNameZh').value.trim(),
-    drugNameEn: document.getElementById('drugNameEn').value.trim(),
-    controlLevels: getCheckedValues('controlLevel'),
-    drugQty: document.getElementById('drugQty').value.trim(),
-    drugUnit: document.getElementById('drugUnit').value.trim(),
-    drugSpec: document.getElementById('drugSpec').value.trim(),
+    const ctrlLevel = document.getElementById('controlLevel').value.trim();
+
+    return {
+      serialNumber: document.getElementById('serialNumber').value.trim(),
+      incidentTypes: getCheckedValues('incidentType'),
+      unit: document.getElementById('unit').value.trim(),
+      reportDate: document.getElementById('reportDate').value,
+      caseNumber: document.getElementById('caseNumber').value.trim(),
+      noCaseNumber: document.getElementById('noCaseNumber').checked,
+      emsRecordNumber: document.getElementById('emsRecordNumber').value.trim(),
+      occurDate: document.getElementById('occurDate').value,
+      occurTime: document.getElementById('occurTime').value,
+      occurPlaces: getCheckedValues('occurPlace'),
+      occurPlaceOtherText: document.getElementById('occurPlaceOtherText').value.trim(),
+      drugNameZh: document.getElementById('drugNameZh').value.trim(),
+      drugNameEn: document.getElementById('drugNameEn').value.trim(),
+      controlLevel: ctrlLevel,
+      controlLevels: ctrlLevel ? [ctrlLevel] : [],
+      drugQty: document.getElementById('drugQty').value.trim(),
+      drugUnit: document.getElementById('drugUnit').value.trim(),
+      drugSpec: document.getElementById('drugSpec').value.trim(),
     batchNumber: document.getElementById('batchNumber').value.trim(),
     expiryDate: document.getElementById('expiryDate').value,
     custodian: document.getElementById('custodian').value.trim(),
@@ -946,12 +1043,25 @@ function populateFormData(data) {
   document.getElementById('occurTime').value = data.occurTime || '';
   setCheckboxes('occurPlace', data.occurPlaces);
   document.getElementById('occurPlaceOtherText').value = data.occurPlaceOtherText || '';
-  document.getElementById('drugNameZh').value = data.drugNameZh || '';
-  document.getElementById('drugNameEn').value = data.drugNameEn || '';
-  setCheckboxes('controlLevel', data.controlLevels);
+
+  // 還原藥品資訊（智慧容錯比對，精準匹配標準下拉選單）
+  const matched = matchDrugInCatalog(data.drugNameZh || data.drugNameEn);
+  if (matched) {
+    document.getElementById('drugNameZh').value = matched.zh;
+    document.getElementById('drugNameEn').value = matched.en;
+    document.getElementById('drugSpec').value = data.drugSpec || matched.spec;
+    const rawLevel = data.controlLevel || (Array.isArray(data.controlLevels) ? data.controlLevels[0] : '') || matched.level;
+    document.getElementById('controlLevel').value = rawLevel;
+  } else {
+    document.getElementById('drugNameZh').value = data.drugNameZh || '';
+    document.getElementById('drugNameEn').value = data.drugNameEn || '';
+    document.getElementById('drugSpec').value = data.drugSpec || '';
+    const rawLevel = data.controlLevel || (Array.isArray(data.controlLevels) ? data.controlLevels[0] : '') || '';
+    document.getElementById('controlLevel').value = rawLevel;
+  }
+
   document.getElementById('drugQty').value = data.drugQty || '';
-  document.getElementById('drugUnit').value = data.drugUnit || '';
-  document.getElementById('drugSpec').value = data.drugSpec || '';
+  document.getElementById('drugUnit').value = data.drugUnit || (matched ? matched.unit : '');
   document.getElementById('batchNumber').value = data.batchNumber || '';
   document.getElementById('expiryDate').value = data.expiryDate || '';
   document.getElementById('custodian').value = data.custodian || '';
@@ -1343,6 +1453,10 @@ function bindToolbarAndModals() {
   document.getElementById('btnResetForm').addEventListener('click', () => {
     if (!confirm('確定要清空目前表單所有內容並建立新單號嗎？')) return;
     document.getElementById('incidentForm').reset();
+    document.getElementById('drugNameZh').value = '';
+    document.getElementById('drugNameEn').value = '';
+    document.getElementById('drugSpec').value = '';
+    document.getElementById('controlLevel').value = '';
     photoState.photo1 = '';
     photoState.photo2 = '';
     restorePhotoPreview(1, '');

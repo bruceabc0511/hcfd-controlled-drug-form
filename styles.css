@@ -448,7 +448,7 @@ body {
   user-select: none;
 }
 
-.title-check-label input[type="checkbox"]:checked + span {
+.title-check-label input[type="checkbox"]:checked+span {
   color: var(--user-blue);
 }
 
@@ -615,8 +615,8 @@ body {
   user-select: none;
 }
 
-.check-label input[type="checkbox"]:checked + span,
-.check-label input[type="radio"]:checked + span {
+.check-label input[type="checkbox"]:checked+span,
+.check-label input[type="radio"]:checked+span {
   color: var(--user-blue);
   font-weight: 700;
 }
@@ -647,8 +647,14 @@ body {
 
 .drug-subrow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.drug-subrow .input-select {
+  flex: 1 1 180px;
+  min-width: 0;
 }
 
 .drug-subrow-label {
@@ -662,7 +668,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .qty-unit-item {
@@ -1310,6 +1316,7 @@ body {
     opacity: 0;
     transform: translateY(12px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1472,6 +1479,7 @@ body {
 
 /* 3. 極窄螢幕手機 (<= 480px，含 320px~375px)：確保表單元件 100% 滿版不水平溢出 */
 @media screen and (max-width: 480px) {
+
   .datetime-date,
   .datetime-time,
   .qty-unit-item,
