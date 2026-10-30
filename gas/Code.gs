@@ -10,13 +10,15 @@
  */
 
 const SHEET_NAME = '管制藥品事故報告單紀錄';
+const DRUG_SHEET_NAME = '藥品品項清單';
 const DRIVE_ROOT_FOLDER_NAME = '新竹縣消防局_管制藥品事故照片';
 
 /**
  * 處理 GET 請求：
- * - ?action=ping          : 測試雲端連線
- * - ?action=getReport&id= : 依流水編號讀取單筆完整報告單（含從 Drive 還原照片供預覽與列印）
- * - ?action=listReports   : 讀取最近 50 筆報告單清單
+ * - ?action=ping            : 測試雲端連線，並自動初始化試算表與回傳最新藥品品項 (方案 C)
+ * - ?action=getReport&id=   : 依流水編號讀取單筆完整報告單（含還原照片與藥品清單）
+ * - ?action=listReports     : 讀取最近 50 筆報告單清單
+ * - ?action=getDrugCatalog  : 讀取「藥品品項清單」工作表最新藥品標準目錄 (方案 C)
  */
 function doGet(e) {
   const action = (e && e.parameter && e.parameter.action) || 'ping';
@@ -24,9 +26,19 @@ function doGet(e) {
   try {
     if (action === 'ping') {
       ensureSheetInitialized_();
+      const drugs = getDrugCatalog_();
       return jsonResponse_({
         status: 'success',
-        message: '新竹縣政府消防局管制藥品事故報告單 雲端傳簽後端連線正常！'
+        message: '新竹縣政府消防局管制藥品事故報告單 雲端傳簽後端連線正常！',
+        drugs: drugs
+      });
+    }
+
+    if (action === 'getDrugCatalog') {
+      const drugs = getDrugCatalog_();
+      return jsonResponse_({
+        status: 'success',
+        drugs: drugs
       });
     }
 
@@ -41,7 +53,8 @@ function doGet(e) {
       }
       return jsonResponse_({
         status: 'success',
-        record: record
+        record: record,
+        drugs: getDrugCatalog_()
       });
     }
 
@@ -385,7 +398,131 @@ function ensureSheetInitialized_() {
     sheet.setFrozenRows(1);
   }
 
+  // 同步確保藥品品項清單工作表已就緒
+  ensureDrugSheetInitialized_();
+
   return sheet;
+}
+
+/**
+ * 預設管制藥品標準品項清單（初次建立工作表時自動填入）
+ */
+const DEFAULT_DRUG_CATALOG = [
+  {
+    zh: '納布芬注射液 (芯奔)',
+    en: 'Nalbuphine (Bain Injection)',
+    spec: '10mg/1mL/Amp',
+    level: '非管制藥',
+    unit: '支(Amp)',
+    status: '啟用'
+  },
+  {
+    zh: '咪達唑侖注射液 (導眠靜)',
+    en: 'Midazolam Injection (Dormicum)',
+    spec: '5mg/1mL/Amp',
+    level: '四級',
+    unit: '支(Amp)',
+    status: '啟用'
+  },
+  {
+    zh: '嗎啡注射液',
+    en: 'Morphine HCl Injection',
+    spec: '20mg/1mL/Amp',
+    level: '一級',
+    unit: '支(Amp)',
+    status: '啟用'
+  },
+  {
+    zh: '愷他命注射液 (克太拉)',
+    en: 'Ketamine Injection',
+    spec: '500mg/10mL/Vial',
+    level: '三級',
+    unit: '瓶(Vial)',
+    status: '啟用'
+  }
+];
+
+/**
+ * 確保「藥品品項清單」工作表存在且初始化預設資料 (方案 C)
+ */
+function ensureDrugSheetInitialized_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(DRUG_SHEET_NAME);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(DRUG_SHEET_NAME);
+    const headers = [
+      '藥品中文名稱',
+      '藥品英文名稱',
+      '規格',
+      '管制級別',
+      '計量單位',
+      '狀態 (啟用/停用)'
+    ];
+    sheet.appendRow(headers);
+
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setBackground('#005BBB');
+    headerRange.setFontColor('#FFFFFF');
+    headerRange.setFontWeight('bold');
+
+    DEFAULT_DRUG_CATALOG.forEach(function(item) {
+      sheet.appendRow([item.zh, item.en, item.spec, item.level, item.unit, item.status]);
+    });
+
+    sheet.setFrozenRows(1);
+    sheet.autoResizeColumns(1, headers.length);
+  }
+
+  return sheet;
+}
+
+/**
+ * 讀取「藥品品項清單」工作表之所有有效藥品 (方案 C)
+ * 支援管理人員隨時於試算表直接新增、修改或將狀態改為「停用」
+ */
+function getDrugCatalog_() {
+  try {
+    const sheet = ensureDrugSheetInitialized_();
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return DEFAULT_DRUG_CATALOG.map(function(d) {
+        return { zh: d.zh, en: d.en, spec: d.spec, level: d.level, unit: d.unit };
+      });
+    }
+
+    const data = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
+    const catalog = [];
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const zh = String(row[0] || '').trim();
+      const en = String(row[1] || '').trim();
+      const spec = String(row[2] || '').trim();
+      const level = String(row[3] || '').trim();
+      const unit = String(row[4] || '').trim();
+      const status = String(row[5] || '').trim();
+
+      // 若未填寫中文名稱或狀態設定為「停用」，則略過
+      if (!zh) continue;
+      if (status === '停用') continue;
+
+      catalog.push({
+        zh: zh,
+        en: en,
+        spec: spec,
+        level: level,
+        unit: unit
+      });
+    }
+
+    return catalog.length > 0 ? catalog : DEFAULT_DRUG_CATALOG.map(function(d) {
+      return { zh: d.zh, en: d.en, spec: d.spec, level: d.level, unit: d.unit };
+    });
+  } catch (e) {
+    return DEFAULT_DRUG_CATALOG.map(function(d) {
+      return { zh: d.zh, en: d.en, spec: d.spec, level: d.level, unit: d.unit };
+    });
+  }
 }
 
 /**

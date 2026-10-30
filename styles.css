@@ -560,6 +560,30 @@ body {
   cursor: not-allowed;
 }
 
+/* 鎖定唯讀輸入框（管制級別、規格隨藥品品項綁定） */
+.input-locked {
+  background-color: #F8FAFC !important;
+  color: #1E40AF !important;
+  font-weight: 600;
+  cursor: not-allowed;
+  border-color: #CBD5E1;
+  user-select: none;
+}
+
+.input-locked:focus {
+  border-color: #94A3B8 !important;
+  box-shadow: none !important;
+}
+
+.field-hint-locked {
+  display: block;
+  font-size: 11px;
+  color: #64748B;
+  margin-top: 3px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
 .input-inline {
   width: auto;
   display: inline-block;

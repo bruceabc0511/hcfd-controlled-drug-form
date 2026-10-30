@@ -11,14 +11,15 @@ const STORAGE_KEYS = {
   HISTORY: 'hcfd_controlled_drug_history_v1',
   GAS_URL: 'hcfd_controlled_drug_gas_url_v1',
   SERIAL_COUNTER: 'hcfd_controlled_drug_seq_v1',
-  CUSTOM_OPTIONS: 'hcfd_controlled_drug_custom_options_v1'
+  CUSTOM_OPTIONS: 'hcfd_controlled_drug_custom_options_v1',
+  DRUG_CATALOG: 'hcfd_controlled_drug_catalog_v1'
 };
 
 // ============================================================================
 // 管制藥品清單與規格標準目錄（集中維護單一真實來源 SSOT）
-// 若未來需新增/修改/刪除藥品，直接在此陣列增減物件即可，所有下拉選單與聯動自動生效
+// 方案 C：支援 Google 試算表「藥品品項清單」工作表遠端動態同步與本機快取
 // ============================================================================
-const DRUG_CATALOG = [
+const DEFAULT_DRUG_CATALOG = [
   {
     zh: '納布芬注射液 (芯奔)',
     en: 'Nalbuphine (Bain Injection)',
@@ -49,11 +50,60 @@ const DRUG_CATALOG = [
   }
 ];
 
-// 向後相容字典
-const COMMON_DRUGS_DICT = {};
-DRUG_CATALOG.forEach((d) => {
-  COMMON_DRUGS_DICT[d.zh] = { en: d.en, level: d.level, spec: d.spec, unit: d.unit };
-});
+// 目前使用的藥品目錄（優先讀取本機快取，若無則使用內建預設值）
+let DRUG_CATALOG = loadDrugCatalogFromStorage();
+
+function loadDrugCatalogFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.DRUG_CATALOG);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to parse cached drug catalog:', e);
+  }
+  return [...DEFAULT_DRUG_CATALOG];
+}
+
+function saveDrugCatalogToStorage(catalog) {
+  if (Array.isArray(catalog) && catalog.length > 0) {
+    DRUG_CATALOG = catalog;
+    try {
+      localStorage.setItem(STORAGE_KEYS.DRUG_CATALOG, JSON.stringify(catalog));
+    } catch (e) {
+      console.warn('Failed to cache drug catalog:', e);
+    }
+  }
+}
+
+/**
+ * 方案 C：從 Google 試算表非同步拉取最新「藥品品項清單」並動態更新選單
+ */
+async function fetchDrugCatalogFromCloud(silent = true) {
+  const gasUrl = getActiveGasUrl();
+  if (!gasUrl) return false;
+
+  try {
+    const res = await fetch(`${gasUrl}?action=getDrugCatalog`);
+    const json = await res.json();
+    if (json && json.status === 'success' && Array.isArray(json.drugs) && json.drugs.length > 0) {
+      saveDrugCatalogToStorage(json.drugs);
+      initDrugDropdownOptions();
+      if (!silent) {
+        showToast(`✅ 已從 Google 試算表同步最新藥品品項清單（共 ${json.drugs.length} 項）！`);
+      }
+      return true;
+    }
+  } catch (err) {
+    if (!silent) {
+      showToast('⚠️ 同步藥品品項清單失敗：' + err.message);
+    }
+  }
+  return false;
+}
 
 // 儲存照片 Base64 狀態
 const photoState = {
@@ -72,6 +122,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   initCloudUrlFromQueryOrDefault();
   updateCloudStatusUI();
   initAdminConfigAccess();
+
+  // 方案 C：頁面載入時背景靜默向 Google 試算表同步最新藥品清單
+  fetchDrugCatalogFromCloud(true);
 
   // 檢查網址是否帶有傳簽單號 (?id=HCFD-...)
   const hasSharedId = await checkAndLoadSharedReportFromUrl();
@@ -144,6 +197,10 @@ async function checkAndLoadSharedReportFromUrl() {
     const res = await fetch(`${gasUrl}?action=getReport&id=${encodeURIComponent(reportId)}`);
     const json = await res.json();
     if (json && json.status === 'success' && json.record) {
+      if (Array.isArray(json.drugs) && json.drugs.length > 0) {
+        saveDrugCatalogToStorage(json.drugs);
+        initDrugDropdownOptions();
+      }
       populateFormData(json.record);
       setBaselineSnapshot(json.record);
       showToast(`✅ 已成功載入單號 ${reportId}！請填寫主管意見後點擊「儲存 & 複製傳簽連結」`);
@@ -165,27 +222,37 @@ async function checkAndLoadSharedReportFromUrl() {
 function initDrugDropdownOptions() {
   const zhSelect = document.getElementById('drugNameZh');
   const enSelect = document.getElementById('drugNameEn');
-  const specSelect = document.getElementById('drugSpec');
+
+  const curZh = zhSelect ? zhSelect.value : '';
+  const curEn = enSelect ? enSelect.value : '';
 
   if (zhSelect) {
-    const curZh = zhSelect.value;
-    zhSelect.innerHTML = '<option value="">-- 請選擇中文藥名 --</option>' +
-      DRUG_CATALOG.map(d => `<option value="${escapeHtml(d.zh)}">${escapeHtml(d.zh)}</option>`).join('');
+    let optionsHtml = '<option value="">-- 請選擇中文藥名 --</option>';
+    let zhExists = false;
+    DRUG_CATALOG.forEach(d => {
+      if (d.zh === curZh) zhExists = true;
+      optionsHtml += `<option value="${escapeHtml(d.zh)}">${escapeHtml(d.zh)}</option>`;
+    });
+    // 若表單目前值不在清單中（例如舊單據自訂項目），動態補充保留顯示
+    if (curZh && !zhExists) {
+      optionsHtml += `<option value="${escapeHtml(curZh)}">${escapeHtml(curZh)} (非現行清單項目)</option>`;
+    }
+    zhSelect.innerHTML = optionsHtml;
     if (curZh) zhSelect.value = curZh;
   }
 
   if (enSelect) {
-    const curEn = enSelect.value;
-    enSelect.innerHTML = '<option value="">-- 請選擇英文藥名 --</option>' +
-      DRUG_CATALOG.map(d => `<option value="${escapeHtml(d.en)}">${escapeHtml(d.en)}</option>`).join('');
+    let optionsHtml = '<option value="">-- 請選擇英文藥名 --</option>';
+    let enExists = false;
+    DRUG_CATALOG.forEach(d => {
+      if (d.en === curEn) enExists = true;
+      optionsHtml += `<option value="${escapeHtml(d.en)}">${escapeHtml(d.en)}</option>`;
+    });
+    if (curEn && !enExists) {
+      optionsHtml += `<option value="${escapeHtml(curEn)}">${escapeHtml(curEn)} (非現行清單項目)</option>`;
+    }
+    enSelect.innerHTML = optionsHtml;
     if (curEn) enSelect.value = curEn;
-  }
-
-  if (specSelect) {
-    const curSpec = specSelect.value;
-    specSelect.innerHTML = '<option value="">-- 請選擇規格 --</option>' +
-      DRUG_CATALOG.map(d => `<option value="${escapeHtml(d.spec)}">${escapeHtml(d.spec)}</option>`).join('');
-    if (curSpec) specSelect.value = curSpec;
   }
 }
 
@@ -201,11 +268,20 @@ function matchDrugInCatalog(zhOrEn) {
   found = DRUG_CATALOG.find(d => d.zh.replace(/\s+/g, '') === clean || d.en.replace(/\s+/g, '') === clean);
   if (found) return found;
 
-  // 3. 關鍵字比對 (相容舊版括號名稱)
-  if (str.includes('納布芬') || str.toLowerCase().includes('nalbuphine')) return DRUG_CATALOG[0];
-  if (str.includes('咪達唑侖') || str.toLowerCase().includes('midazolam')) return DRUG_CATALOG[1];
-  if (str.includes('嗎啡') || str.toLowerCase().includes('morphine')) return DRUG_CATALOG[2];
-  if (str.includes('愷他命') || str.toLowerCase().includes('ketamine')) return DRUG_CATALOG[3];
+  // 3. 關鍵字模糊比對
+  for (let i = 0; i < DRUG_CATALOG.length; i++) {
+    const item = DRUG_CATALOG[i];
+    if (item.zh && (str.includes(item.zh) || item.zh.includes(str))) return item;
+    if (item.en && (str.toLowerCase().includes(item.en.toLowerCase()) || item.en.toLowerCase().includes(str.toLowerCase()))) {
+      return item;
+    }
+  }
+
+  // 4. 舊版括號常見別名 fallback
+  if (str.includes('納布芬') || str.toLowerCase().includes('nalbuphine')) return DRUG_CATALOG.find(d => d.zh.includes('納布芬')) || DRUG_CATALOG[0];
+  if (str.includes('咪達唑侖') || str.toLowerCase().includes('midazolam')) return DRUG_CATALOG.find(d => d.zh.includes('咪達唑侖')) || DRUG_CATALOG[1];
+  if (str.includes('嗎啡') || str.toLowerCase().includes('morphine')) return DRUG_CATALOG.find(d => d.zh.includes('嗎啡')) || DRUG_CATALOG[2];
+  if (str.includes('愷他命') || str.toLowerCase().includes('ketamine')) return DRUG_CATALOG.find(d => d.zh.includes('愷他命')) || DRUG_CATALOG[3];
 
   return null;
 }
@@ -213,26 +289,26 @@ function matchDrugInCatalog(zhOrEn) {
 function setupDrugSelectLinkage() {
   const zhSelect = document.getElementById('drugNameZh');
   const enSelect = document.getElementById('drugNameEn');
-  const specSelect = document.getElementById('drugSpec');
-  const levelSelect = document.getElementById('controlLevel');
+  const specInput = document.getElementById('drugSpec');
+  const levelInput = document.getElementById('controlLevel');
   const unitInput = document.getElementById('drugUnit');
 
   if (!zhSelect || !enSelect) return;
 
-  // 1. 中文藥名變更時：自動帶入英文、規格、管制級別、單位
+  // 1. 中文藥名變更時：自動帶入英文、規格、管制級別、單位（規格與管制級別由品項鎖定綁定，不可使用者修改）
   zhSelect.addEventListener('change', (e) => {
     const val = e.target.value.trim();
     const item = matchDrugInCatalog(val);
     if (item) {
       if (zhSelect.value !== item.zh) zhSelect.value = item.zh;
-      enSelect.value = item.en;
-      if (specSelect) specSelect.value = item.spec;
-      if (levelSelect) levelSelect.value = item.level;
+      enSelect.value = item.en || '';
+      if (specInput) specInput.value = item.spec || '';
+      if (levelInput) levelInput.value = item.level || '';
       if (unitInput && item.unit) unitInput.value = item.unit;
     } else if (!val) {
       enSelect.value = '';
-      if (specSelect) specSelect.value = '';
-      if (levelSelect) levelSelect.value = '';
+      if (specInput) specInput.value = '';
+      if (levelInput) levelInput.value = '';
     }
     syncPrintView();
     updateWorkflowProgressUI();
@@ -244,39 +320,38 @@ function setupDrugSelectLinkage() {
     const val = e.target.value.trim();
     const item = matchDrugInCatalog(val);
     if (item) {
-      zhSelect.value = item.zh;
+      zhSelect.value = item.zh || '';
       if (enSelect.value !== item.en) enSelect.value = item.en;
-      if (specSelect) specSelect.value = item.spec;
-      if (levelSelect) levelSelect.value = item.level;
+      if (specInput) specInput.value = item.spec || '';
+      if (levelInput) levelInput.value = item.level || '';
       if (unitInput && item.unit) unitInput.value = item.unit;
     } else if (!val) {
       zhSelect.value = '';
-      if (specSelect) specSelect.value = '';
-      if (levelSelect) levelSelect.value = '';
+      if (specInput) specInput.value = '';
+      if (levelInput) levelInput.value = '';
     }
     syncPrintView();
     updateWorkflowProgressUI();
     saveDraftToStorage(true);
   });
-
-  // 3. 規格或管制級別手動微調
-  if (specSelect) {
-    specSelect.addEventListener('change', () => {
-      syncPrintView();
-      saveDraftToStorage(true);
-    });
-  }
-  if (levelSelect) {
-    levelSelect.addEventListener('change', () => {
-      syncPrintView();
-      saveDraftToStorage(true);
-    });
-  }
 }
 
 /* ==========================================================================
    1. 自動將使用者手動填入的項目加入常用選單 (Datalist 單位、分隊持久化)
    ========================================================================== */
+function ensureSelectOption(selectId, value) {
+  const el = document.getElementById(selectId);
+  const cleanVal = String(value || '').trim();
+  if (!el || !cleanVal) return;
+  const exists = Array.from(el.options).some((opt) => opt.value === cleanVal);
+  if (!exists) {
+    const opt = document.createElement('option');
+    opt.value = cleanVal;
+    opt.textContent = `${cleanVal} (非現行清單項目)`;
+    el.appendChild(opt);
+  }
+}
+
 function getStoredCustomOptions() {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.CUSTOM_OPTIONS);
@@ -1045,6 +1120,9 @@ function populateFormData(data) {
   document.getElementById('occurPlaceOtherText').value = data.occurPlaceOtherText || '';
 
   // 還原藥品資訊（智慧容錯比對，精準匹配標準下拉選單）
+  if (data.drugNameZh) ensureSelectOption('drugNameZh', data.drugNameZh);
+  if (data.drugNameEn) ensureSelectOption('drugNameEn', data.drugNameEn);
+
   const matched = matchDrugInCatalog(data.drugNameZh || data.drugNameEn);
   if (matched) {
     document.getElementById('drugNameZh').value = matched.zh;
@@ -1536,6 +1614,10 @@ function bindToolbarAndModals() {
       const res = await fetch(`${url}?action=ping`);
       const json = await res.json();
       if (json && json.status === 'success') {
+        if (Array.isArray(json.drugs) && json.drugs.length > 0) {
+          saveDrugCatalogToStorage(json.drugs);
+          initDrugDropdownOptions();
+        }
         showToast('✅ 連線成功！' + (json.message || 'Google 試算表後端運作正常'));
       } else {
         showToast('⚠️ 收到回應但狀態異常，請確認部署權限設為「所有人」');
@@ -1544,6 +1626,17 @@ function bindToolbarAndModals() {
       showToast('❌ 連線測試失敗：請確認網址為 /exec 結尾且部署權限為「所有人」');
     }
   });
+
+  const btnSyncDrugs = document.getElementById('btnSyncDrugCatalogNow');
+  if (btnSyncDrugs) {
+    btnSyncDrugs.addEventListener('click', async () => {
+      showToast('🔄 正在從 Google 試算表同步最新藥品品項清單...');
+      const ok = await fetchDrugCatalogFromCloud(false);
+      if (!ok) {
+        showToast('⚠️ 無法同步藥品清單，請確認雲端網址已設定且網路連線正常');
+      }
+    });
+  }
 
   document.getElementById('btnFetchCloudRecords').addEventListener('click', async () => {
     const url = getActiveGasUrl();
@@ -1621,7 +1714,7 @@ function escapeHtml(str) {
  * 隱藏管理員雲端設定入口：避免於傳簽時被其他人員誤觸改到設定
  * 管理員解鎖方式：
  * 1. 網址帶有 ?admin=1 或 ?config=1（會自動於右上角顯現「☁️ 雲端設定」按鈕）
- * 2. 或連續點擊左上角「藥」字 Logo 5 次，即可解鎖並直接開啟設定視窗
+ * 2. 或連續點擊左上角「藥」字 Logo 8 次，即可解鎖並直接開啟設定視窗
  */
 function initAdminConfigAccess() {
   const urlParams = new URLSearchParams(window.location.search);
@@ -1632,7 +1725,7 @@ function initAdminConfigAccess() {
     if (btn) btn.style.display = 'inline-flex';
   }
 
-  // 方式 2：連續點擊左上角「藥」Logo 5 次解鎖
+  // 方式 2：連續點擊左上角「藥」Logo 8 次解鎖
   const brandIcon = document.querySelector('.brand-icon');
   if (brandIcon) {
     let clickCount = 0;
@@ -1642,8 +1735,8 @@ function initAdminConfigAccess() {
     brandIcon.addEventListener('click', () => {
       clickCount++;
       clearTimeout(clickTimer);
-      clickTimer = setTimeout(() => { clickCount = 0; }, 1500);
-      if (clickCount >= 5) {
+      clickTimer = setTimeout(() => { clickCount = 0; }, 2200);
+      if (clickCount >= 8) {
         clickCount = 0;
         if (btn) btn.style.display = 'inline-flex';
         document.getElementById('gasWebAppUrl').value = getActiveGasUrl();

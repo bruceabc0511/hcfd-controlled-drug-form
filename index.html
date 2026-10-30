@@ -257,14 +257,8 @@
               <th class="field-label">管制級別</th>
               <td colspan="2">
                 <div class="screen-only-input">
-                  <select id="controlLevel" name="controlLevel" class="input-select" required>
-                    <option value="">-- 請選擇管制級別 --</option>
-                    <option value="一級">一級</option>
-                    <option value="二級">二級</option>
-                    <option value="三級">三級</option>
-                    <option value="四級">四級</option>
-                    <option value="非管制藥">非管制藥</option>
-                  </select>
+                  <input type="text" id="controlLevel" name="controlLevel" class="input-text input-locked" readonly placeholder="選擇藥品後自動帶入" title="管制級別隨藥品品項自動綁定" required />
+                  <span class="field-hint-locked">🔒 隨藥品品項自動綁定</span>
                 </div>
                 <span class="print-only-text" id="print_controlLevel">□一級 □二級 □三級 □四級 □非管制藥</span>
               </td>
@@ -312,13 +306,8 @@
               <th class="field-label spaced-label">規格</th>
               <td>
                 <div class="screen-only-input">
-                  <select id="drugSpec" name="drugSpec" class="input-select">
-                    <option value="">-- 請選擇規格 --</option>
-                    <option value="10mg/1mL/Amp">10mg/1mL/Amp</option>
-                    <option value="5mg/1mL/Amp">5mg/1mL/Amp</option>
-                    <option value="20mg/1mL/Amp">20mg/1mL/Amp</option>
-                    <option value="500mg/10mL/Vial">500mg/10mL/Vial</option>
-                  </select>
+                  <input type="text" id="drugSpec" name="drugSpec" class="input-text input-locked" readonly placeholder="選擇藥品後自動帶入" title="規格隨藥品品項自動綁定" />
+                  <span class="field-hint-locked">🔒 隨藥品品項自動綁定</span>
                 </div>
                 <span class="print-only-text" id="print_drugSpec"></span>
               </td>
@@ -811,6 +800,20 @@
             <li>點擊「<strong>部署</strong>」➔「<strong>授予存取權</strong>」➔ 選擇您的 Google 帳號 ➔ 點選左下角「<strong>進階 (Advanced)</strong>」➔「<strong>前往未命名專案 (不安全)</strong>」➔「<strong>允許</strong>」。</li>
             <li>複製畫面產生的「<strong>網頁應用程式網址 (`https://script.google.com/macros/s/.../exec`)</strong>」，貼到上方輸入框並按「✅ 儲存設定」即可！</li>
           </ol>
+        </div>
+
+        <div style="background: #EFF6FF; border:1px solid #BFDBFE; border-radius:8px; padding:12px 14px; margin-top:12px;">
+          <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px;">
+            <div>
+              <strong style="color:#1D4ED8; font-size:13px;">💊 藥品品項線上維護（方案 C）：</strong>
+              <div style="font-size:12px; color:#1E40AF; margin-top:2px;">
+                系統已於 Google 試算表自動建立「<strong>藥品品項清單</strong>」分頁，可隨時線上維護品項、規格與管制級別。
+              </div>
+            </div>
+            <button type="button" class="btn btn-outline" id="btnSyncDrugCatalogNow" style="padding:4px 10px; font-size:12px;">
+              🔄 立即同步藥品清單
+            </button>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
