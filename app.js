@@ -556,13 +556,20 @@ function bindFormEvents() {
     const caseNote = noCase ? '（本次為分隊廳舍內例行清點/交接，故無救護案件編號）' : '';
 
     document.getElementById('reportContent').value =
-      `一、本分隊（${unit}）${reporter}於上述發生時間執行勤務／藥品清點時${caseNote}，不慎發生「${drug}」${qty}${drugUnit}安瓿破損情事。\n` +
-      `二、事發當下立即保留破損安瓿殘品、外盒並拍照存證，同時同步通報分隊長及醫院藥劑科，並登載於收支結存簿冊及使用紀錄單（姓名欄註記「破損」）。`;
+      `一、本分隊人員：${reporter}，於上述發生時間執行救護勤務／藥品清點時，...（請敘明事發經過）...，導致不慎發生「${drug}」安瓿藥瓶破損一事，造成藥液 ${qty}${drugUnit}全數流失。\n` +
+      `二、事發當下立即保留破損安瓿殘品、外盒並拍照存證，同時同步通報分隊長及醫院藥劑科，並登載於收支結存簿冊及使用紀錄單（姓名欄註記「破損」）。\n` +
+      `${caseNote}`;
 
-    if (!document.getElementById('improve1').value) {
-      document.getElementById('improve1').value = '加強出勤救護藥箱防撞緩衝固定，取用安瓿時雙手確認握穩。';
-      document.getElementById('improve2').value = '落實交接班與出勤前後雙人覆核清點機制。';
-    }
+    // 自動勾選損壞
+    document.getElementById('typeDamage').checked = true;
+    document.getElementById('typeLost').checked = false;
+    document.getElementById('policeNA').checked = true;
+    document.getElementById('policeReported').checked = false;
+
+    // 改善方案範本帶入（覆蓋或帶入）
+    document.getElementById('improve1').value = '加強出勤救護藥箱防撞緩衝固定，取用安瓿時雙手確認握穩。';
+    document.getElementById('improve2').value = '車輛行駛中原則不開啟安瓿；需給藥時應請駕駛減速或於安全處暫停後再抽藥。';
+    document.getElementById('improve3').value = '';
     syncPrintView();
     updateWorkflowProgressUI();
     saveDraftToStorage(true);
@@ -577,14 +584,19 @@ function bindFormEvents() {
     const drugUnit = document.getElementById('drugUnit').value || '支';
 
     document.getElementById('reportContent').value =
-      `一、本分隊（${unit}）${reporter}於上述時間返隊清點救護車管制藥品時，發現「${drug}」短少${qty}${drugUnit}。\n` +
-      `二、立即保留現場並發動全隊同仁搜尋未果，當下即同步通報分隊長、緊急救護科及醫院藥劑科，並立即前往轄區警察機關完成報案程序取得受（處）理案件證明單。`;
+      `一、本分隊人員：${reporter}，於上述時間清點管制藥品時，發現「${drug}」短少${qty}${drugUnit}。\n` +
+      `二、立即保留現場並請全隊上班同仁搜尋未果，當下立即通報分隊長、緊急救護科及醫院藥劑科，並立即前往轄區警察機關完成報案程序取得受（處）理案件證明單。`;
 
-    if (!document.getElementById('improve1').value) {
-      document.getElementById('improve1').value = '救護現場使用管制藥品後，空安瓿與未用藥品立即歸入專用上鎖藥盒。';
-      document.getElementById('improve2').value = '離開救護現場及醫院交接前，由主副手雙人再次清點管制藥品數量。';
-      document.getElementById('improve3').value = '強化每班交接清點紀錄與隨車藥箱上鎖管理。';
-    }
+    // 自動勾選遺失
+    document.getElementById('typeLost').checked = true;
+    document.getElementById('typeDamage').checked = false;
+    document.getElementById('policeReported').checked = true;
+    document.getElementById('policeNA').checked = false;
+
+    // 改善方案範本帶入（覆蓋或帶入）
+    document.getElementById('improve1').value = '救護現場使用管制藥品後，空安瓿與未用藥品立即歸入專用上鎖藥盒。';
+    document.getElementById('improve2').value = '離開救護現場及醫院交接前，由主副手雙人再次清點管制藥品數量。';
+    document.getElementById('improve3').value = '強化每班交接清點紀錄與隨車藥箱上鎖管理。';
     syncPrintView();
     updateWorkflowProgressUI();
     saveDraftToStorage(true);
