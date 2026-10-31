@@ -898,7 +898,7 @@ function syncPrintView() {
   const qty = document.getElementById('drugQty').value.trim();
   const dUnit = document.getElementById('drugUnit').value.trim();
   document.getElementById('print_qtyUnit').innerHTML =
-    `數量：${qty ? blueSpan(qty) : '　　'}　　單位：${dUnit ? blueSpan(dUnit) : '　　'}`;
+    `數量：${qty ? blueSpan(qty) : '　'}　　單位：${dUnit ? blueSpan(dUnit) : '　　　'}`;
 
   // 6. 規格、批號、效期
   document.getElementById('print_drugSpec').innerHTML = blueSpan(document.getElementById('drugSpec').value.trim());
@@ -1045,27 +1045,27 @@ function collectFormData() {
   const getCheckedValues = (name) =>
     Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map((el) => el.value);
 
-    const ctrlLevel = document.getElementById('controlLevel').value.trim();
+  const ctrlLevel = document.getElementById('controlLevel').value.trim();
 
-    return {
-      serialNumber: document.getElementById('serialNumber').value.trim(),
-      incidentTypes: getCheckedValues('incidentType'),
-      unit: document.getElementById('unit').value.trim(),
-      reportDate: document.getElementById('reportDate').value,
-      caseNumber: document.getElementById('caseNumber').value.trim(),
-      noCaseNumber: document.getElementById('noCaseNumber').checked,
-      emsRecordNumber: document.getElementById('emsRecordNumber').value.trim(),
-      occurDate: document.getElementById('occurDate').value,
-      occurTime: document.getElementById('occurTime').value,
-      occurPlaces: getCheckedValues('occurPlace'),
-      occurPlaceOtherText: document.getElementById('occurPlaceOtherText').value.trim(),
-      drugNameZh: document.getElementById('drugNameZh').value.trim(),
-      drugNameEn: document.getElementById('drugNameEn').value.trim(),
-      controlLevel: ctrlLevel,
-      controlLevels: ctrlLevel ? [ctrlLevel] : [],
-      drugQty: document.getElementById('drugQty').value.trim(),
-      drugUnit: document.getElementById('drugUnit').value.trim(),
-      drugSpec: document.getElementById('drugSpec').value.trim(),
+  return {
+    serialNumber: document.getElementById('serialNumber').value.trim(),
+    incidentTypes: getCheckedValues('incidentType'),
+    unit: document.getElementById('unit').value.trim(),
+    reportDate: document.getElementById('reportDate').value,
+    caseNumber: document.getElementById('caseNumber').value.trim(),
+    noCaseNumber: document.getElementById('noCaseNumber').checked,
+    emsRecordNumber: document.getElementById('emsRecordNumber').value.trim(),
+    occurDate: document.getElementById('occurDate').value,
+    occurTime: document.getElementById('occurTime').value,
+    occurPlaces: getCheckedValues('occurPlace'),
+    occurPlaceOtherText: document.getElementById('occurPlaceOtherText').value.trim(),
+    drugNameZh: document.getElementById('drugNameZh').value.trim(),
+    drugNameEn: document.getElementById('drugNameEn').value.trim(),
+    controlLevel: ctrlLevel,
+    controlLevels: ctrlLevel ? [ctrlLevel] : [],
+    drugQty: document.getElementById('drugQty').value.trim(),
+    drugUnit: document.getElementById('drugUnit').value.trim(),
+    drugSpec: document.getElementById('drugSpec').value.trim(),
     batchNumber: document.getElementById('batchNumber').value.trim(),
     expiryDate: document.getElementById('expiryDate').value,
     custodian: document.getElementById('custodian').value.trim(),

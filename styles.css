@@ -435,6 +435,8 @@ body {
   border: 1.5px solid var(--primary);
   padding: 2px 12px;
   border-radius: 8px;
+  width: auto;
+  flex: 0 0 auto;
 }
 
 .title-check-label {
@@ -520,7 +522,7 @@ body {
 }
 
 /* Form Controls inside Table Cells — 使用者填入值一律顯示為藍色 */
-.screen-only-input {
+.form-table td .screen-only-input {
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -1438,21 +1440,6 @@ input[type="time"]::-webkit-date-and-time-value {
   .form-table th.field-label.spaced-label {
     letter-spacing: 2px;
     text-indent: 2px;
-  }
-
-  .input-text,
-  .input-select,
-  .input-date,
-  .input-number,
-  .input-textarea {
-    padding: 5px 7px;
-    font-size: 13px;
-  }
-
-  .datetime-date,
-  .datetime-time {
-    flex: 1 1 100%;
-    width: 100%;
   }
 }
 
