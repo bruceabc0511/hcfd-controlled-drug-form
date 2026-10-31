@@ -519,6 +519,7 @@ function bindFormEvents() {
       document.getElementById('typeLost').checked = false;
       document.getElementById('policeNA').checked = true;
       document.getElementById('policeReported').checked = false;
+      handleConditionalUI();
       syncPrintView();
       saveDraftToStorage(true);
     }
@@ -529,10 +530,17 @@ function bindFormEvents() {
       document.getElementById('typeDamage').checked = false;
       document.getElementById('policeReported').checked = true;
       document.getElementById('policeNA').checked = false;
+      handleConditionalUI();
       syncPrintView();
       saveDraftToStorage(true);
     }
   });
+
+  // 「發生地點」單選互斥（救護現場 / 救護車上 / 分隊 / 其他）
+  bindMutuallyExclusiveCheckboxes('occurPlace');
+
+  // 「遺失／失竊報案證明」單選互斥（不適用(損壞) / 已報案）
+  bindMutuallyExclusiveCheckboxes('policeStatus');
 
   // 分隊長「責任判定」單選互斥（故意 / 過失 / 其他）與（能確定責任 / 無法確定責任）
   bindMutuallyExclusiveCheckboxes('chiefDutyType');
@@ -565,6 +573,7 @@ function bindFormEvents() {
     document.getElementById('typeLost').checked = false;
     document.getElementById('policeNA').checked = true;
     document.getElementById('policeReported').checked = false;
+    handleConditionalUI();
 
     // 改善方案範本帶入（覆蓋或帶入）
     document.getElementById('improve1').value = '加強出勤救護藥箱防撞緩衝固定，取用安瓿時雙手確認握穩。';
@@ -572,6 +581,7 @@ function bindFormEvents() {
     document.getElementById('improve3').value = '';
     syncPrintView();
     updateWorkflowProgressUI();
+    checkDateConsistencyHint();
     saveDraftToStorage(true);
     showToast('已套用「藥品破損」報告與改善方案範本');
   });
@@ -592,6 +602,7 @@ function bindFormEvents() {
     document.getElementById('typeDamage').checked = false;
     document.getElementById('policeReported').checked = true;
     document.getElementById('policeNA').checked = false;
+    handleConditionalUI();
 
     // 改善方案範本帶入（覆蓋或帶入）
     document.getElementById('improve1').value = '救護現場使用管制藥品後，空安瓿與未用藥品立即歸入專用上鎖藥盒。';
@@ -599,6 +610,7 @@ function bindFormEvents() {
     document.getElementById('improve3').value = '強化每班交接清點紀錄與隨車藥箱上鎖管理。';
     syncPrintView();
     updateWorkflowProgressUI();
+    checkDateConsistencyHint();
     saveDraftToStorage(true);
     showToast('已套用「藥品遺失」報告與改善方案範本');
   });
@@ -624,8 +636,10 @@ function bindMutuallyExclusiveCheckboxes(groupName) {
         boxes.forEach((other) => {
           if (other !== e.target) other.checked = false;
         });
+        handleConditionalUI();
         syncPrintView();
         updateWorkflowProgressUI();
+        checkDateConsistencyHint();
         saveDraftToStorage(true);
       }
     });
@@ -658,7 +672,30 @@ function handleConditionalUI() {
 
   const otherPlaceChk = document.getElementById('occurPlaceOtherChk');
   const otherPlaceText = document.getElementById('occurPlaceOtherText');
-  otherPlaceText.style.display = otherPlaceChk.checked ? 'block' : 'none';
+  if (otherPlaceChk && otherPlaceText) {
+    otherPlaceText.style.display = otherPlaceChk.checked ? 'block' : 'none';
+    if (!otherPlaceChk.checked) {
+      otherPlaceText.value = '';
+    }
+  }
+
+  // 當遺失/失竊報案證明勾選「不適用(損壞)」時，鎖定後方受理單位、日期、文號並加上樣式
+  const isPoliceNA = document.getElementById('policeNA').checked;
+  const policeUnit = document.getElementById('policeUnit');
+  const policeDate = document.getElementById('policeDate');
+  const policeDocNo = document.getElementById('policeDocNo');
+  const policeFields = [policeUnit, policeDate, policeDocNo];
+
+  policeFields.forEach((field) => {
+    if (field) {
+      field.disabled = isPoliceNA;
+      if (isPoliceNA) {
+        field.classList.add('input-locked');
+      } else {
+        field.classList.remove('input-locked');
+      }
+    }
+  });
 }
 
 function checkDateConsistencyHint() {
